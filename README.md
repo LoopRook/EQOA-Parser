@@ -10,13 +10,11 @@ two combined. If you run two emulators at once, both show up.
 
 ## Download and run
 
-You don't need Python for this.
-
 1. Download `EQOAParser-<version>.zip` from the [latest release](https://github.com/LoopRook/EQOA-Parser/releases/latest) and unzip it anywhere.
 2. In PCSX2, open Settings → Network & HDD, enable Ethernet, and set the device type to **Sockets**.
 3. Double-click `EQOAParser.exe`. Windows will probably say "Windows protected your PC" because the program isn't
-   code-signed; click **More info**, then **Run anyway**. Then say yes to the Administrator prompt. Windows only lets
-   administrators read network traffic, and that's the only reason the meter asks for it.
+   code-signed; click **More info**, then **Run anyway**. Then say yes to the Administrator prompt (the safety section
+   below explains why it asks).
 4. Play. A fight starts with the first hit and ends after 8 seconds with no damage dealt or taken.
 
 The zip also has a `READ-ME-FIRST.txt` with the same steps, if you're passing it on to someone.
@@ -36,7 +34,7 @@ Start the meter before you log in or zone if you can. Names for characters and m
 when they first appear, so anything already on screen when the meter starts shows up as an ID like `0x01312F0A` until it
 comes back into view.
 
-## Is it safe?
+## Safety and privacy
 
 The meter only listens to the traffic between your PC and the Sandstorm server (`5.161.217.188`). It doesn't send
 anything, and it doesn't read or change the emulator or the game. The only thing it writes is the fight summaries, on
@@ -47,8 +45,8 @@ It's a passive tool, but it's still worth checking Sandstorm's rules on third-pa
 
 ## Two emulators
 
-Just run both. The meter follows every copy of PCSX2 talking to the server and gives each character their own rows. If
-you only want one, pass its connection port (shown in the status line): `EQOAParser.exe --connection 20605`.
+The meter follows every copy of PCSX2 talking to the server and gives each character their own rows. If you only want
+one, pass its connection port (shown in the status line): `EQOAParser.exe --connection 20605`.
 
 ## If it shows nothing
 
@@ -66,7 +64,7 @@ captures, so some of it is educated guesswork.
 - Spell and ability names aren't decoded yet; they show as "(unknown)".
 - Group members on other people's PCs aren't shown yet, only characters on your own emulators.
 
-If you're curious how the packets were decoded and which parts are confirmed, see [docs/protocol-notes.md](docs/protocol-notes.md).
+Notes on how the packets were decoded, and which parts are confirmed, are in [docs/protocol-notes.md](docs/protocol-notes.md).
 
 ## Roadmap
 
