@@ -1,10 +1,7 @@
 # EQOA Parser
 
-A DPS meter for EverQuest Online Adventures, played on the PCSX2 emulator on the Sandstorm server.
-
-EQOA doesn't have a combat log, so EQOA Parser reads damage from the game server's network traffic instead. These are
-the same numbers you see pop up over your target. Each fight shows every character you're playing, their pet, and the
-two combined. If you run two emulators at once, both show up.
+A damage meter for EverQuest Online Adventures on PCSX2, for players on the Sandstorm server. It shows how much damage
+you and your pet do in each fight, and works with two emulators running at once.
 
 ![EQOA Parser window](docs/images/screenshot.png)
 
