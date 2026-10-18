@@ -1,0 +1,24 @@
+# EQOA parser config. Every key is optional; defaults live in eqoa_parser/config.py.
+idle_timeout: 8.0        # seconds with no damage dealt or received that ends a fight
+show_group: false        # MVP shows You and Pet only; true reveals other actors
+pet_names: []            # names the game uses for your pet (mapped to "pet")
+player_name: null        # your character name, if the game ever refers to you by name
+patterns_file: patterns.yaml
+unmatched_log: unmatched.log
+runs_dir: runs
+
+pine:
+  slot: 28011
+  host: 127.0.0.1
+  unix_socket: null
+  timeout: 2.0
+
+buffer:                  # UNKNOWN until Phase 2 -- see docs/finding-the-buffer.md
+  address: null
+  size: 4096
+  encoding: ascii        # UNKNOWN: ascii | utf16le | shiftjis
+  poll_interval: 0.1
+
+ui:
+  always_on_top: true
+  refresh_ms: 250

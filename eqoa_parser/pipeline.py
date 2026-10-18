@@ -1,0 +1,152 @@
+"""Engine: source -> parser -> segmenter -> stats. Core module: no UI imports.
+
+See docs/CONTRACTS.md section "pipeline".
+"""
+from __future__ import annotations
+
+import threading
+from typing import Callable
+
+from .config import Config
+from .events import Event
+from .parser import Parser
+from .segmenter import Fight, Segmenter
+from .sources import HEARTBEAT, LogSource
+from .stats import FightSummary, RunSummary, summarize_fight, summarize_run
+
+LiveCallback = Callable[[FightSummary], None]
+ClosedCallback = Callable[[FightSummary], None]
+
+
+class Engine:
+    """Consumes a LogSource and maintains fight state for one run.
+
+    Callbacks run on the thread that calls run(); a UI must marshal them to its own thread.
+      on_live(summary)    -- after every event attached to the current fight (summary.ongoing=True)
+      on_closed(summary)  -- when a fight closes (idle timeout, tick, or end of stream)
+      Unmatched and ignored lines advance the clock like heartbeats (contract; they tick the segmenter).
+      on_finished()       -- once, after the source is exhausted/closed and the last fight flushed
+    """
+
+    def __init__(
+        self,
+        config: Config,
+        source: LogSource,
+        *,
+        parser: Parser | None = None,  # default: Parser built from config (patterns, unmatched log, names)
+        on_live: LiveCallback | None = None,
+        on_closed: ClosedCallback | None = None,
+        on_finished: Callable[[], None] | None = None,
+    ) -> None:
+        self.config = config
+        self.source = source
+        self._owns_parser = parser is None
+        self.parser = parser if parser is not None else Parser(
+            config.resolve(config.patterns_file),
+            unmatched_path=config.resolve(config.unmatched_log),
+            pet_names=config.pet_names,
+            player_name=config.player_name,
+        )
+        self._segmenter = Segmenter(config.idle_timeout)
+        self._on_live = on_live
+        self._on_closed = on_closed
+        self._on_finished = on_finished
+        self._closed: list[FightSummary] = []
+        self._lock = threading.RLock()
+        self._finished = False
+
+    def run(self, stop: threading.Event | None = None) -> None:
+        """Blocking. Stops when the source ends or `stop` is set (then closes the source)."""
+        try:
+            for ts, raw in self.source:
+                if stop is not None and stop.is_set():
+                    break
+                self.step(ts, raw)
+                if stop is not None and stop.is_set():
+                    break
+        finally:
+            self.source.close()
+            self.finish()
+
+    def step(self, ts: float, raw: "str | Event") -> None:
+        """Process one (ts, item) tuple; HEARTBEAT only ticks the segmenter. Used by run().
+
+        `item` is a text line (parsed with the Parser) or an already-built Event (packet sources), which goes
+        straight to the segmenter.
+
+        Lines that parse to no event (ignored, unmatched) also advance the clock like a heartbeat.
+        """
+        if isinstance(raw, Event):
+            event = raw
+        else:
+            event = None if raw == HEARTBEAT else self.parser.parse(ts, raw)
+        live: FightSummary | None = None
+        with self._lock:
+            if event is None:
+                closed = self._segmenter.tick(ts)
+            else:
+                closed = self._segmenter.feed(event)
+                cur = self._segmenter.current
+                if cur is not None and cur.events and cur.events[-1] is event:
+                    live = summarize_fight(cur, ongoing=True, own_actors=self._own_actors(), groups=self._groups(cur))
+            summaries = [self._record(f) for f in closed]
+        for s in summaries:
+            if self._on_closed is not None:
+                self._on_closed(s)
+        if live is not None and self._on_live is not None:
+            self._on_live(live)
+
+    def _own_actors(self) -> list[str] | None:
+        """Actor names that count as "ours" when the source follows several characters; None for text sources."""
+        fn = getattr(self.source, "own_actors", None)
+        return list(fn()) if callable(fn) else None
+
+    def _groups(self, fight: Fight) -> list[dict] | None:
+        """Characters followed by the source, as stored per fight: [{"name","player","pet"}]; None for text sources
+        or while nothing is followed yet (= one "You")."""
+        fn = getattr(self.source, "character_groups", None)
+        if not callable(fn):
+            return None
+        # a character first seen after the fight ended is not part of it
+        groups = [{"name": g.name, "player": g.player_key, "pet": g.pet_key}
+                  for g in fn() if getattr(g, "first_ts", 0.0) <= fight.end_ts]
+        return groups or None
+
+    def _record(self, fight: Fight) -> FightSummary:
+        s = summarize_fight(fight, own_actors=self._own_actors(), groups=self._groups(fight))
+        self._closed.append(s)
+        return s
+
+    def finish(self) -> None:
+        """Flush the current fight (firing on_closed) and fire on_finished. Idempotent."""
+        with self._lock:
+            if self._finished:
+                return
+            self._finished = True
+            summaries = [self._record(f) for f in self._segmenter.flush()]
+        try:
+            for s in summaries:
+                if self._on_closed is not None:
+                    self._on_closed(s)
+            if self._on_finished is not None:
+                self._on_finished()
+        finally:
+            if self._owns_parser:
+                self.parser.close()
+
+    @property
+    def closed_fights(self) -> list[FightSummary]:
+        with self._lock:
+            return list(self._closed)
+
+    def current_summary(self) -> FightSummary | None:
+        with self._lock:
+            cur = self._segmenter.current
+            if cur is None:
+                return None
+            return summarize_fight(cur, ongoing=True, own_actors=self._own_actors(), groups=self._groups(cur))
+
+    def run_summary(self) -> RunSummary:
+        """Over this run's closed fights only."""
+        with self._lock:
+            return summarize_run(self._closed)

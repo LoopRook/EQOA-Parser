@@ -1,0 +1,12 @@
+# EQOA Parser settings. Every line is optional; delete this file to use the built-in defaults.
+idle_timeout: 8.0        # seconds without damage that end a fight
+show_group: false        # true also lists other players' damage
+runs_dir: runs           # fights are saved here, next to the exe
+
+net:
+  server_ip: 5.161.217.188   # the Sandstorm game server; change it only if the server moves
+  interface_ip: null         # your PC's IPv4 address on the network PCSX2 uses; null = detect automatically
+  local_port: null           # null = follow every running emulator
+
+ui:
+  always_on_top: true

@@ -1,0 +1,42 @@
+[replay:fixtures/synthetic_combat.log] run 20261017T132117; 0 fight(s) from earlier runs today; saving to <path> Projects\EQOA Parser\docs\evidence\runs\2026-10-17.json
+[live] fight 1 vs a decaying skeleton 0.0s | You 12 (12.0 dps, max 12) | Pet 0 (0.0 dps, max 0)
+[live] fight 1 vs a decaying skeleton 2.0s | You 52 (26.0 dps, max 40) | Pet 8 (4.0 dps, max 8)
+[live] fight 1 vs a decaying skeleton 4.0s | You 67 (16.8 dps, max 40) | Pet 17 (4.2 dps, max 9)
+[live] fight 1 vs a decaying skeleton 6.0s | You 82 (13.7 dps, max 40) | Pet 28 (4.7 dps, max 11)
+=== Fight 1: a decaying skeleton - 6.0s ===
+  You        total     82  dps    13.7  max hit    40
+  Pet        total     28  dps     4.7  max hit    11
+  Combined   total    110  dps    18.3  (damage taken 8)
+  Top abilities: melee (you) 42, Fire Bolt (you) 40, melee (pet) 28
+[live] fight 2 vs a fire beetle 0.0s | You 55 (55.0 dps, max 55) | Pet 0 (0.0 dps, max 0)
+=== Fight 2: a fire beetle - 0.0s ===
+  You        total     55  dps    55.0  max hit    55
+  Pet        total      0  dps     0.0  max hit     0
+  Combined   total     55  dps    55.0  (damage taken 0)
+  Top abilities: Fire Bolt (you) 55
+[live] fight 3 vs a gnoll pup 0.0s | You 10 (10.0 dps, max 10) | Pet 0 (0.0 dps, max 0)
+[live] fight 3 vs a gnoll pup 2.0s | You 16 (8.0 dps, max 10) | Pet 7 (3.5 dps, max 7)
+[live] fight 3 vs a gnoll pup 4.0s | You 54 (13.5 dps, max 38) | Pet 7 (1.8 dps, max 7)
+[live] fight 3 vs a gnoll pup 6.0s | You 54 (9.0 dps, max 38) | Pet 19 (3.2 dps, max 12)
+=== Fight 3: a gnoll pup - 7.5s ===
+  You        total     65  dps     8.7  max hit    38
+  Pet        total     19  dps     2.5  max hit    12
+  Combined   total     84  dps    11.2  (damage taken 4)
+  Top abilities: Fire Bolt (you) 38, melee (you) 27, melee (pet) 19
+[live] fight 4 vs a large rat 0.0s | You 7 (7.0 dps, max 7) | Pet 0 (0.0 dps, max 0)
+=== Fight 4: a large rat - 0.0s ===
+  You        total      7  dps     7.0  max hit     7
+  Pet        total      0  dps     0.0  max hit     0
+  Combined   total      7  dps     7.0  (damage taken 0)
+  Top abilities: melee (you) 7
+[live] fight 5 vs a large rat 0.0s | You 9 (9.0 dps, max 9) | Pet 0 (0.0 dps, max 0)
+=== Fight 5: a large rat - 0.0s ===
+  You        total      9  dps     9.0  max hit     9
+  Pet        total      9  dps     9.0  max hit     9
+  Combined   total     18  dps    18.0  (damage taken 0)
+  Top abilities: melee (you) 9, melee (pet) 9
+=== Run summary ===
+  Fights: 5
+  Total damage: 274
+  Average DPS: 16.6
+  Best fight: fight 2 vs a fire beetle at 55.0 dps

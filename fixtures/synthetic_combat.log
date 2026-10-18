@@ -1,0 +1,46 @@
+# SYNTHETIC replay fixture. NOT real EQOA output: every message format here is ASSUMED.
+# Format (ours): <ts seconds><TAB><raw line>. Lines starting with # are comments.
+# Designed edge cases:
+#  - fight 1: you + pet hits in the same second (ts +0.0 and +2.0); a legitimately repeated
+#    identical line at +4.0 that MUST count twice (replay lines are distinct messages);
+#    a miss, incoming damage to you and to pet, a death and an ignored xp line inside the fight.
+#  - fight 2 starts exactly idle_timeout (8.0s) after fight 1's last damage -> new fight (>= rule);
+#    it is a single hit: zero-duration fight (DPS uses 1.0s minimum).
+#  - fight 3: two overlapping targets plus group member Bob (hidden unless show_group).
+#  - fight 4/5: misses at +5 and +9 do NOT extend fight 4; the hit 10s later starts fight 5.
+#  - unmatched lines: a tell, a guild message, a garbled line -> unmatched.log (3 lines).
+# Expected results: fixtures/synthetic_combat.expected.json (computed by hand).
+1792263600.0	You hit a decaying skeleton for 12 points of damage.
+1792263600.0	Your pet bites a decaying skeleton for 8 points of damage.
+1792263601.5	A decaying skeleton hits you for 5 points of damage.
+1792263602.0	Your Fire Bolt hits a decaying skeleton for 40 points of damage.
+1792263602.0	Your pet claws a decaying skeleton for 9 points of damage.
+1792263603.2	You try to slash a decaying skeleton, but miss!
+1792263604.0	You slash a decaying skeleton for 15 points of damage.
+1792263604.0	You slash a decaying skeleton for 15 points of damage.
+1792263605.1	A decaying skeleton hits your pet for 3 points of damage.
+1792263606.0	Your pet bites a decaying skeleton for 11 points of damage.
+1792263606.5	You have slain a decaying skeleton!
+1792263607.0	You gain experience!
+1792263610.0	Bob tells you, 'nice pull'
+1792263614.0	Your Fire Bolt hits a fire beetle for 55 points of damage.
+1792263614.3	You have slain a fire beetle!
+1792263630.0	You hit a gnoll pup for 10 points of damage.
+1792263630.5	Bob hits a gnoll pup for 14 points of damage.
+1792263631.0	Your pet hits a gnoll scout for 7 points of damage.
+1792263631.0	You kick a gnoll scout for 6 points of damage.
+1792263632.0	A gnoll scout hits you for 4 points of damage.
+1792263633.0	Your Fire Bolt hits a gnoll pup for 38 points of damage.
+1792263634.0	Bob's Flame Lick hits a gnoll scout for 20 points of damage.
+1792263635.0	You have slain a gnoll pup!
+1792263636.0	Your pet bites a gnoll scout for 12 points of damage.
+1792263637.5	You hit a gnoll scout for 11 points of damage.
+1792263638.0	You have slain a gnoll scout!
+1792263645.0	[Guild] Alice: lfg
+1792263646.0	Zx#q@ ~~ 0xFF garbled
+1792263660.0	You hit a large rat for 7 points of damage.
+1792263665.0	You try to hit a large rat, but miss!
+1792263669.0	You try to hit a large rat, but miss!
+1792263670.0	You hit a large rat for 9 points of damage.
+1792263670.0	Your pet bites a large rat for 9 points of damage.
+1792263671.0	You have slain a large rat!

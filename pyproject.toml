@@ -1,0 +1,10 @@
+[project]
+name = "eqoa-parser"
+version = "0.2.0"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-only" }
+dependencies = ["PyYAML>=6.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

@@ -1,0 +1,94 @@
+# EQOA combat message patterns.
+#
+# STATUS: SYNTHETIC. Every pattern below is ASSUMED (invented, EverQuest-style wording).
+# None has been checked against real EQOA/Sandstorm output. Replace with real captures in Phase 2;
+# mark a pattern `status: VERIFIED` only after it matches real captured text.
+# Text encoding of the real buffer: UNKNOWN (ASSUMED ascii here).
+#
+# Schema (per pattern):
+#   name:    unique id
+#   kind:    damage | damage_taken | miss | death | ignore
+#   regex:   Python regex, matched with re.fullmatch against the line with surrounding whitespace stripped.
+#            Named groups used: actor, target, amount, ability. Other groups are ignored.
+#   actor/target/ability: fixed values used when the regex has no group of that name.
+#   status:  ASSUMED | VERIFIED
+# Order matters: the first pattern that matches wins.
+
+version: 1
+status: SYNTHETIC
+encoding: ascii  # ASSUMED
+
+patterns:
+  # --- incoming damage (must precede the generic third-party patterns) ---
+  - name: taken_you
+    kind: damage_taken
+    regex: '(?P<actor>.+?) (?:hits|bites|claws|slashes|crushes|pierces|bashes|kicks|punches|smashes) you for (?P<amount>\d+) points? of damage\.'
+    target: you
+    ability: melee
+    status: ASSUMED
+
+  - name: taken_pet
+    kind: damage_taken
+    regex: '(?P<actor>.+?) (?:hits|bites|claws|slashes|crushes|pierces|bashes|kicks|punches|smashes) your pet for (?P<amount>\d+) points? of damage\.'
+    target: pet
+    ability: melee
+    status: ASSUMED
+
+  # --- pet ---
+  - name: pet_ability
+    kind: damage
+    regex: "Your pet's (?P<ability>.+?) hits (?P<target>.+?) for (?P<amount>\\d+) points? of damage\\."
+    actor: pet
+    status: ASSUMED
+
+  - name: pet_melee
+    kind: damage
+    regex: 'Your pet (?:hits|bites|claws|slashes|crushes|pierces|bashes|kicks|punches|smashes) (?P<target>.+?) for (?P<amount>\d+) points? of damage\.'
+    actor: pet
+    ability: melee
+    status: ASSUMED
+
+  # --- you ---
+  - name: you_melee
+    kind: damage
+    regex: 'You (?:hit|bite|claw|slash|crush|pierce|bash|kick|punch|smash) (?P<target>.+?) for (?P<amount>\d+) points? of damage\.'
+    actor: you
+    ability: melee
+    status: ASSUMED
+
+  - name: you_ability
+    kind: damage
+    regex: 'Your (?P<ability>.+?) hits (?P<target>.+?) for (?P<amount>\d+) points? of damage\.'
+    actor: you
+    status: ASSUMED
+
+  - name: you_miss
+    kind: miss
+    regex: 'You try to \w+ (?P<target>.+?), but miss!'
+    actor: you
+    ability: melee
+    status: ASSUMED
+
+  - name: you_slay
+    kind: death
+    regex: 'You have slain (?P<target>.+?)!'
+    actor: you
+    status: ASSUMED
+
+  # --- other named actors (group members later; shown only with show_group) ---
+  - name: other_ability
+    kind: damage
+    regex: "(?P<actor>[A-Z][a-z]+)'s (?P<ability>.+?) hits (?P<target>.+?) for (?P<amount>\\d+) points? of damage\\."
+    status: ASSUMED
+
+  - name: other_melee
+    kind: damage
+    regex: '(?P<actor>[A-Z][a-z]+) (?:hits|bites|claws|slashes|crushes|pierces|bashes|kicks|punches|smashes) (?P<target>.+?) for (?P<amount>\d+) points? of damage\.'
+    ability: melee
+    status: ASSUMED
+
+  # --- known non-combat noise: matched, produces no Event, not written to unmatched.log ---
+  - name: xp_gain
+    kind: ignore
+    regex: 'You gain (?:party )?experience!'
+    status: ASSUMED

@@ -1,0 +1,29 @@
+{
+ "_comment": "ORACLE (main chat scratch heuristic, INFERRED): entity id -> name from server spawn/update data in fixtures/real/cap2 (cap1 has none). Rule used: a byte 0x80|len (len 3..32) followed by 0x04, then `len` ASCII name bytes; the entity id is the u32 immediately before the nearest preceding `82 31` within 120 bytes. Names stripped of trailing spaces. The training dummy 0x01312F0A has no name in these captures.",
+ "names": {
+  "0x0002B421": "Blixin Kaboom",
+  "0x000D9C6A": "Gylod Ungrim",
+  "0x01312ED3": "Captain Scilond",
+  "0x01312ED4": "Rotting Flesh",
+  "0x01312ED5": "Rotting Flesh",
+  "0x01312EDB": "Bat",
+  "0x01312EDC": "Rotting Flesh",
+  "0x01312EDD": "Rotting Flesh",
+  "0x01312EDE": "Rotting Flesh",
+  "0x01312EF7": "Rotting Flesh",
+  "0x01312EF8": "Ant",
+  "0x01312F0F": "Guard",
+  "0x01312F1A": "Sidewinder",
+  "0x01374606": "Wilting Flesh",
+  "0x028B7715": "Grimefod Philch",
+  "0x028B974E": "Assistant Recruiter",
+  "0x028B9786": "Hydilla",
+  "0x028BE5F8": "Recruiter",
+  "0x028BE9A8": "Merchant Nelly",
+  "0x1267105C": "Darkkalel",
+  "0x12683CC6": "Powerhungry",
+  "0x167BE024": "Koral",
+  "0x16923434": "Naturebound",
+  "0x1751CB82": "Zecron"
+ }
+}

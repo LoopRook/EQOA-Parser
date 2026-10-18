@@ -1,0 +1,43 @@
+EQOA PARSER - a DPS meter for EverQuest Online Adventures (PCSX2 + Sandstorm)
+==========================================================================
+
+WHAT IT DOES
+It shows how much damage you and your pet do in each fight, with DPS and your best hits.
+It works by listening to the game's own network traffic to the Sandstorm server. It never
+sends anything and never touches or changes the emulator or the game.
+
+WHAT YOU NEED
+- Windows.
+- PCSX2 with the network set to "Sockets" (Settings > Network & HDD), playing on Sandstorm.
+
+FIRST START
+1. Double-click EQOAParser.exe.
+2. Windows may say "Windows protected your PC". The program is not digitally signed, so
+   that is normal. Click "More info", then "Run anyway".
+3. Windows then asks for Administrator permission. Click Yes. Reading network traffic is
+   only allowed for Administrators; that is the only reason it asks.
+4. The meter window opens. Play as usual. A fight starts at the first hit and ends after
+   8 seconds without damage.
+
+TWO EMULATORS
+If you run two PCSX2 windows, the meter follows both. The first one to fight is "You".
+
+WHERE YOUR FIGHTS ARE SAVED
+In a folder called "runs" next to EQOAParser.exe, one file per day. Nothing is sent anywhere.
+
+IF IT SHOWS NOTHING
+- Check PCSX2 network is set to "Sockets" and you are logged in on Sandstorm.
+- Open config.yaml (Notepad) and check server_ip is the Sandstorm server address.
+  If you use a VPN or several network cards, put your PC's IPv4 address in interface_ip.
+- Make sure you accepted the Administrator prompt.
+- An error appears in a message box if the meter cannot start.
+
+OTHER FILES
+- config.yaml: optional settings. Delete it to use the defaults.
+- EQOAParser-replay.exe: for checking a saved capture file; ordinary players can ignore it.
+
+NOTE
+This is an early version and has only been tested on one PC. Damage numbers come straight
+from the server, but how hits are split between you and your pet is still being confirmed,
+and targets may show as a code like 0x01312F0A instead of a name. Tell the person who gave
+you this what you see.

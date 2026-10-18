@@ -1,0 +1,307 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-17",
+  "runs": [
+    {
+      "run_id": "20261017T132201",
+      "started_at": "2026-10-17T13:22:01-04:00",
+      "source": "replay:fixtures/synthetic_combat.log",
+      "fights": [
+        {
+          "fight_id": 1,
+          "target": "a decaying skeleton",
+          "targets": [
+            "a decaying skeleton"
+          ],
+          "start_ts": 1792263600.0,
+          "end_ts": 1792263606.0,
+          "duration": 6.0,
+          "actors": {
+            "you": {
+              "actor": "you",
+              "total": 82,
+              "hits": 4,
+              "max_hit": 40,
+              "dps": 13.666666666666666,
+              "abilities": {
+                "melee": {
+                  "name": "melee",
+                  "total": 42,
+                  "hits": 3,
+                  "max_hit": 15
+                },
+                "Fire Bolt": {
+                  "name": "Fire Bolt",
+                  "total": 40,
+                  "hits": 1,
+                  "max_hit": 40
+                }
+              }
+            },
+            "pet": {
+              "actor": "pet",
+              "total": 28,
+              "hits": 3,
+              "max_hit": 11,
+              "dps": 4.666666666666667,
+              "abilities": {
+                "melee": {
+                  "name": "melee",
+                  "total": 28,
+                  "hits": 3,
+                  "max_hit": 11
+                }
+              }
+            }
+          },
+          "combined_total": 110,
+          "combined_dps": 18.333333333333332,
+          "damage_taken": 8,
+          "top_abilities": [
+            {
+              "actor": "you",
+              "ability": "melee",
+              "total": 42
+            },
+            {
+              "actor": "you",
+              "ability": "Fire Bolt",
+              "total": 40
+            },
+            {
+              "actor": "pet",
+              "ability": "melee",
+              "total": 28
+            }
+          ],
+          "ongoing": false
+        },
+        {
+          "fight_id": 2,
+          "target": "a fire beetle",
+          "targets": [
+            "a fire beetle"
+          ],
+          "start_ts": 1792263614.0,
+          "end_ts": 1792263614.0,
+          "duration": 0.0,
+          "actors": {
+            "you": {
+              "actor": "you",
+              "total": 55,
+              "hits": 1,
+              "max_hit": 55,
+              "dps": 55.0,
+              "abilities": {
+                "Fire Bolt": {
+                  "name": "Fire Bolt",
+                  "total": 55,
+                  "hits": 1,
+                  "max_hit": 55
+                }
+              }
+            }
+          },
+          "combined_total": 55,
+          "combined_dps": 55.0,
+          "damage_taken": 0,
+          "top_abilities": [
+            {
+              "actor": "you",
+              "ability": "Fire Bolt",
+              "total": 55
+            }
+          ],
+          "ongoing": false
+        },
+        {
+          "fight_id": 3,
+          "target": "a gnoll pup",
+          "targets": [
+            "a gnoll pup",
+            "a gnoll scout"
+          ],
+          "start_ts": 1792263630.0,
+          "end_ts": 1792263637.5,
+          "duration": 7.5,
+          "actors": {
+            "you": {
+              "actor": "you",
+              "total": 65,
+              "hits": 4,
+              "max_hit": 38,
+              "dps": 8.666666666666666,
+              "abilities": {
+                "melee": {
+                  "name": "melee",
+                  "total": 27,
+                  "hits": 3,
+                  "max_hit": 11
+                },
+                "Fire Bolt": {
+                  "name": "Fire Bolt",
+                  "total": 38,
+                  "hits": 1,
+                  "max_hit": 38
+                }
+              }
+            },
+            "Bob": {
+              "actor": "Bob",
+              "total": 34,
+              "hits": 2,
+              "max_hit": 20,
+              "dps": 4.533333333333333,
+              "abilities": {
+                "melee": {
+                  "name": "melee",
+                  "total": 14,
+                  "hits": 1,
+                  "max_hit": 14
+                },
+                "Flame Lick": {
+                  "name": "Flame Lick",
+                  "total": 20,
+                  "hits": 1,
+                  "max_hit": 20
+                }
+              }
+            },
+            "pet": {
+              "actor": "pet",
+              "total": 19,
+              "hits": 2,
+              "max_hit": 12,
+              "dps": 2.533333333333333,
+              "abilities": {
+                "melee": {
+                  "name": "melee",
+                  "total": 19,
+                  "hits": 2,
+                  "max_hit": 12
+                }
+              }
+            }
+          },
+          "combined_total": 84,
+          "combined_dps": 11.2,
+          "damage_taken": 4,
+          "top_abilities": [
+            {
+              "actor": "you",
+              "ability": "Fire Bolt",
+              "total": 38
+            },
+            {
+              "actor": "you",
+              "ability": "melee",
+              "total": 27
+            },
+            {
+              "actor": "pet",
+              "ability": "melee",
+              "total": 19
+            }
+          ],
+          "ongoing": false
+        },
+        {
+          "fight_id": 4,
+          "target": "a large rat",
+          "targets": [
+            "a large rat"
+          ],
+          "start_ts": 1792263660.0,
+          "end_ts": 1792263660.0,
+          "duration": 0.0,
+          "actors": {
+            "you": {
+              "actor": "you",
+              "total": 7,
+              "hits": 1,
+              "max_hit": 7,
+              "dps": 7.0,
+              "abilities": {
+                "melee": {
+                  "name": "melee",
+                  "total": 7,
+                  "hits": 1,
+                  "max_hit": 7
+                }
+              }
+            }
+          },
+          "combined_total": 7,
+          "combined_dps": 7.0,
+          "damage_taken": 0,
+          "top_abilities": [
+            {
+              "actor": "you",
+              "ability": "melee",
+              "total": 7
+            }
+          ],
+          "ongoing": false
+        },
+        {
+          "fight_id": 5,
+          "target": "a large rat",
+          "targets": [
+            "a large rat"
+          ],
+          "start_ts": 1792263670.0,
+          "end_ts": 1792263670.0,
+          "duration": 0.0,
+          "actors": {
+            "you": {
+              "actor": "you",
+              "total": 9,
+              "hits": 1,
+              "max_hit": 9,
+              "dps": 9.0,
+              "abilities": {
+                "melee": {
+                  "name": "melee",
+                  "total": 9,
+                  "hits": 1,
+                  "max_hit": 9
+                }
+              }
+            },
+            "pet": {
+              "actor": "pet",
+              "total": 9,
+              "hits": 1,
+              "max_hit": 9,
+              "dps": 9.0,
+              "abilities": {
+                "melee": {
+                  "name": "melee",
+                  "total": 9,
+                  "hits": 1,
+                  "max_hit": 9
+                }
+              }
+            }
+          },
+          "combined_total": 18,
+          "combined_dps": 18.0,
+          "damage_taken": 0,
+          "top_abilities": [
+            {
+              "actor": "you",
+              "ability": "melee",
+              "total": 9
+            },
+            {
+              "actor": "pet",
+              "ability": "melee",
+              "total": 9
+            }
+          ],
+          "ongoing": false
+        }
+      ]
+    }
+  ]
+}
