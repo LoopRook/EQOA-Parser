@@ -1,7 +1,8 @@
 # EQOA Parser
 
 A damage meter for EverQuest Online Adventures on PCSX2, for players on the Sandstorm server. It shows how much damage
-you and your pet do in each fight, and works with two emulators running at once.
+you and your pet do in each fight, works with two emulators running at once, and has a timed test mode for comparing
+pets or gear on a dummy. With PINE turned on it can also show your group's damage.
 
 ![EQOA Parser window](docs/images/screenshot.png)
 
@@ -33,20 +34,19 @@ comes back into view.
 
 ## Safety and privacy
 
-The meter only listens to the traffic between your PC and the Sandstorm server (`5.161.217.188`). It doesn't send
-anything, and it doesn't read or change the emulator or the game. The only thing it writes is the fight summaries, on
-your own PC; nothing gets uploaded. It needs Administrator rights because Windows won't show network packets to a
-normal program.
+The meter listens to the traffic between your PC and the Sandstorm server (`5.161.217.188`) and never sends anything.
+It never changes the emulator or the game. Without PINE it doesn't touch the emulator at all; with PINE on it reads the
+emulator's memory for names and your group, and never writes to it. Everything it saves (fights, test results, and
+recordings if you make any) stays on your PC; nothing gets uploaded. It needs Administrator rights because Windows
+won't show network packets to a normal program.
 
 It's a passive tool, but it's still worth checking Sandstorm's rules on third-party programs before you use it.
 
 ## Recording a fight
 
-Press **Record** in the window to save the server's packets to a `.pcapng` file, and **Mark** to add a short note at the
-current moment (for example "pet died"); press **Stop recording** when you are done. Files go to a `captures` folder next
-to `EQOAParser.exe`, named like `EQOA-20261019-203000.pcapng`, with your notes in a matching `.marks.txt`. A recording
-only holds packets the server sent to you, never anything your PC sent, so it is safe to share. From a terminal,
-`--live --record` records the whole session.
+If something looks wrong, press **Record**, play until it happens, and press **Mark** to note the moment. The file in
+the `captures` folder next to the exe only holds what the server sent you, so it's safe to send to whoever is helping
+you look into it.
 
 ## Testing on a dummy
 
@@ -55,8 +55,7 @@ spells, press **Test**, name it (for example "Djinni Vizier 1"), keep the length
 dummy. The clock starts at your first damage and DPS is total damage divided by the full length, so every run is
 measured the same way. Keep the setup identical, do three runs of each thing and compare them. Results appear in the
 Tests list with the per-character breakdown, are saved in `runs/<date>.json`, and show the pet's name when PINE is on.
-If a run looks off, press **Record** before it and **Mark** the moment. From a terminal, `--no-gui --test 180
---test-label "Djinni Vizier 1"` runs one test.
+From a terminal, `--no-gui --test 180 --test-label "Djinni Vizier 1"` runs one test.
 
 ## Two emulators
 
@@ -89,7 +88,7 @@ address. If Sandstorm ever moves to a new address, change `server_ip` in the sam
 This is an early version and it has only been tested on one PC. The packet format was pieced together from real game
 captures, so some of it is educated guesswork.
 
-- Monsters that were already on screen when the meter started show as IDs instead of names.
+- Without PINE, monsters that were already on screen when the meter started show as IDs instead of names.
 - Spell and ability names aren't decoded yet; they show as "(unknown)".
 - Group members on other people's PCs only show up with PINE on (see above).
 
@@ -97,7 +96,7 @@ Notes on how the packets were decoded, and which parts are confirmed, are in [do
 
 ## Roadmap
 
-1. Names for monsters that were already on screen.
+1. Names for monsters that were already on screen, without needing PINE.
 2. Spell and ability names.
 3. A transparent overlay you can click through.
 
@@ -110,9 +109,10 @@ python -m eqoa_parser --live          # needs an Administrator terminal; or doub
 python -m eqoa_parser --pcap file.pcapng --no-gui   # replay a saved capture, no admin needed
 python -m eqoa_parser --help
 ```
-To run the tests, install `requirements-dev.txt` and run `python -m pytest -q`. They use two real captures in
-`fixtures/real/`, trimmed down to the server's packets only. To build the exes and the zip, run `packaging\build-exe.bat`;
-everything ends up in `dist\`. The design notes are in [docs/CONTRACTS.md](docs/CONTRACTS.md), and the test and
+To run the tests, install `requirements-dev.txt` and run `python -m pytest -q`. They use three real captures in
+`fixtures/real/`, trimmed down to the server's packets only with `tools/sanitize_pcapng.py`. To build the exes and the
+zip, run `packaging\build-exe.bat`; everything ends up in `dist\`. `packaging\build-prerelease.bat` builds a test copy
+in `prerelease\` with PINE already switched on. The design notes are in [docs/CONTRACTS.md](docs/CONTRACTS.md), and the test and
 verification history is in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 If you record your own capture for debugging (the `pktmon` steps are in [docs/live-capture.md](docs/live-capture.md)),
