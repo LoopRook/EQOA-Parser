@@ -16,6 +16,7 @@ from .config import PROJECT_ROOT, Config, load_config, validate_config
 from .parser import load_patterns
 from .persistence import RunStore
 from .stats import FightSummary, RunSummary, summarize_run
+from .testmode import TestResult, TestRun
 
 EXIT_USAGE = 2
 BUFFER_DOC = "docs/finding-the-buffer.md"
@@ -73,6 +74,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--show-group", action="store_true", help="also show other actors, not just You and Pet")
     p.add_argument("--idle-timeout", type=_finite_float, metavar="N", help="seconds without damage that end a fight")
     p.add_argument("--runs-dir", metavar="DIR", help="where runs/<date>.json is stored (default: config runs_dir)")
+    p.add_argument("--test", type=_finite_float, metavar="SECONDS",
+                   help="with --no-gui: run one timed test: the clock starts at your first damage and the DPS is total / SECONDS")
+    p.add_argument("--test-label", metavar="TEXT", help="name of the --test run (default: test)")
     p.add_argument("--always-on-top", action=argparse.BooleanOptionalAction, default=None,
                    help="keep the window above others (default: config ui.always_on_top)")
     return p
@@ -94,6 +98,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--idle-timeout must be > 0")
     if args.record is not None and not args.live:
         parser.error("--record only works with --live")
+    if args.test is not None and args.test <= 0:
+        parser.error("--test must be > 0")
+    if args.test is not None and not args.no_gui:
+        parser.error("--test needs --no-gui (the window has a Test button)")
+    if args.test_label is not None and args.test is None:
+        parser.error("--test-label needs --test")
     if args.pine_slot is not None and not args.pine:
         parser.error("--pine-slot needs --pine")
     return args
@@ -282,14 +292,37 @@ class Runtime:
     def __init__(self, cfg: Config, source: Any, store: RunStore, sink: Any) -> None:
         self.cfg, self.source, self.store, self.sink = cfg, source, store, sink
         self.closed: list[FightSummary] = []
+        self.tests: list[TestResult] = []
+        self.on_test_done: Any = None  # optional callback(result), after saving and the sink
         self.watch = ErrorWatch(source, sink) if (hasattr(source, "last_error") or hasattr(source, "router")) else None
         watched = self.watch or source
         provider = own_actors_provider(source)
         if provider is not None and hasattr(sink, "own_provider"):
             sink.own_provider = provider
         self.engine = pipeline.Engine(
-            cfg, watched, on_live=sink.on_live, on_closed=self._on_closed, on_finished=self._on_finished
+            cfg, watched, on_live=sink.on_live, on_closed=self._on_closed, on_finished=self._on_finished,
+            on_test=self._on_test,
         )
+
+    def arm_test(self, label: str, length_s: float) -> TestRun:
+        test = TestRun(label, length_s)
+        self.engine.arm_test(test)
+        return test
+
+    def cancel_test(self) -> None:
+        self.engine.cancel_test()
+
+    def _on_test(self, result: TestResult) -> None:
+        self.tests.append(result)
+        try:
+            self.store.add_test(result)
+        except OSError as exc:
+            print(f"warning: could not save test '{result.label}': {exc}", file=sys.stderr)
+        on_test = getattr(self.sink, "on_test", None)
+        if callable(on_test):
+            on_test(result)
+        if self.on_test_done is not None:
+            self.on_test_done(result)
 
     def run_summary(self) -> RunSummary:
         return summarize_run(self.closed)
@@ -311,16 +344,24 @@ class Runtime:
         self.sink.on_finished(self.run_summary())
 
 
-def run_console(cfg: Config, source: Any, label: str) -> int:
+def run_console(cfg: Config, source: Any, label: str, test: tuple[str, float] | None = None,
+                stop_after_test: bool = False) -> int:
     from .ui.console import ConsoleClosed, ConsoleUI
 
     store = RunStore(cfg.runs_dir, label)
     ui = ConsoleUI(cfg.show_group)
     rt = Runtime(cfg, source, store, ui)
+    stop = threading.Event()
+    if test is not None:
+        rt.arm_test(*test)
+        if stop_after_test:
+            rt.on_test_done = lambda _result: stop.set()
     try:
         ui.banner(f"[{label}] run {store.run_id}; {len(store.previous_fights)} fight(s) from earlier runs today; "
                   f"saving to {store.path}")
-        rt.engine.run()
+        rt.engine.run(stop)
+        if test is not None and rt.engine.test is not None and not rt.tests:
+            ui.banner(f"Test '{test[0]}' did not start: no damage from your characters")
     except KeyboardInterrupt:
         source.close()
         rt.engine.finish()
@@ -374,6 +415,8 @@ def run_gui(cfg: Config, source: Any, label: str, app_factory=None, recording=No
         on_close=shutdown,
     )
     rt = Runtime(cfg, source, store, window.sink)
+    if hasattr(window, "set_tests"):
+        window.set_tests(rt, store.previous_tests)
     provider = own_actors_provider(source)
     if provider is not None:
         window.own_provider = provider
@@ -420,7 +463,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if recording is not None and recording.active:
             print(f"recording to {recording.path}", file=sys.stderr)
         if args.no_gui:
-            return run_console(cfg, source, label)
+            test = None if args.test is None else (args.test_label or "test", args.test)
+            return run_console(cfg, source, label, test, stop_after_test=bool(args.live))
         if recording is None:
             return run_gui(cfg, source, label)
         return run_gui(cfg, source, label, recording=recording)

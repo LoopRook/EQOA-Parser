@@ -48,6 +48,16 @@ to `EQOAParser.exe`, named like `EQOA-20261019-203000.pcapng`, with your notes i
 only holds packets the server sent to you, never anything your PC sent, so it is safe to share. From a terminal,
 `--live --record` records the whole session.
 
+## Testing on a dummy
+
+Fights end after a few quiet seconds, so their lengths vary and pauses pull the DPS down. For comparing pets, gear or
+spells, press **Test**, name it (for example "Djinni Vizier 1"), keep the length at 180 seconds and start hitting the
+dummy. The clock starts at your first damage and DPS is total damage divided by the full length, so every run is
+measured the same way. Keep the setup identical, do three runs of each thing and compare them. Results appear in the
+Tests list with the per-character breakdown, are saved in `runs/<date>.json`, and show the pet's name when PINE is on.
+If a run looks off, press **Record** before it and **Mark** the moment. From a terminal, `--no-gui --test 180
+--test-label "Djinni Vizier 1"` runs one test.
+
 ## Two emulators
 
 The meter follows every copy of PCSX2 talking to the server and gives each character their own rows. If you only want

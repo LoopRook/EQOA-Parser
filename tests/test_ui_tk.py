@@ -154,3 +154,47 @@ def test_multibox_rows_and_others_in_detail_line(app_factory):
     assert [str(detail[k]) for k in ("Zecron", "Zecron's pet", "Zecron combined", "Third combined")] == ["10", "675", "685", "12"]
     assert str(detail["All characters"]) == "697"
     assert "Zecron 685/" in rows(app)[0][4] and "Third 12/" in rows(app)[0][4]
+
+
+def test_test_button_dialog_countdown_and_results(app_factory):
+    from eqoa_parser.testmode import TestRun
+
+    class Api:
+        def __init__(self):
+            self.test = None
+            self.cancelled = 0
+
+        def arm_test(self, label, secs):
+            self.test = TestRun(label, secs)
+            return self.test
+
+        def cancel_test(self):
+            self.cancelled += 1
+            self.test.cancel()
+
+    app = app_factory(source_label="replay:x")
+    assert str(app.test_button.cget("state")) == "disabled"
+    api = Api()
+    app.set_tests(api, [])
+    app.ask_test = lambda: ("Djinni Vizier 1", 120.0)
+    app.test_clicked()
+    assert "Test 'Djinni Vizier 1': armed" in app.status_var.get()
+    assert app.test_button.cget("text") == "Cancel test"
+
+    from eqoa_parser.events import Event
+    api.test.feed(Event(10.0, "pet", "dummy", 500, None, "damage", ""), None, {"pet": "Djinni Vizier"})
+    api.test.tick(70.0)
+    app._tick()
+    assert "1:00 left" in app.status_var.get()
+    api.test.tick(130.0)
+    app.sink.on_test(api.test.result())
+    app.drain()
+    (row,) = [app.test_tree.item(i, "values") for i in app.test_tree.get_children()]
+    assert row[0] == "Djinni Vizier 1" and row[1] == "4.2" and "Djinni Vizier" in row[4]
+    assert app.test_detail_tree.get_children()          # breakdown of the selected (newest) test
+    assert "left" not in app.status_var.get() and app.test_button.cget("text") == "Test"
+
+    app.ask_test = lambda: ("again", 30.0)
+    app.test_clicked()
+    app.test_clicked()                                   # second click while active = cancel
+    assert api.cancelled == 1 and app.test_button.cget("text") == "Test"

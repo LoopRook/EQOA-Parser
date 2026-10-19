@@ -18,7 +18,8 @@ from typing import Callable, Sequence
 
 from ..persistence import PastFight
 from ..stats import FightSummary, RunSummary, group_rows
-from .console import DisplayRow, display_rows, format_abilities
+from ..testmode import TestResult
+from .console import DisplayRow, display_rows, format_abilities, result_rows
 
 
 class QueueSink:
@@ -45,6 +46,9 @@ class QueueSink:
     def on_pine(self, text: str) -> None:
         self.q.put(("pine", text))
 
+    def on_test(self, result: TestResult) -> None:
+        self.q.put(("test", result))
+
 
 FIGHT_COLUMNS = (
     ("run", "Run", 38, "center"),
@@ -59,6 +63,20 @@ def characters_cell(s: FightSummary) -> str:
     """Compact per-character combined cell: ``Zecron 675/8.1 · You 20670/251.5`` (characters that dealt damage)."""
     parts = [f"{g.name} {g.combined_total}/{g.combined_dps:.1f}" for g in group_rows(s) if g.combined_total > 0]
     return " · ".join(parts) if parts else "-"
+
+
+TEST_COLUMNS = (
+    ("label", "Test", 150, "w"),
+    ("dps", "DPS", 60, "e"),
+    ("hits", "Hits", 50, "e"),
+    ("big", "Biggest", 62, "e"),
+    ("pet", "Pet", 120, "w"),
+)
+
+
+def test_cells(r: TestResult) -> tuple:
+    pets = ", ".join(r.pet_names) or "-"
+    return (r.label, f"{r.dps:.1f}", r.hits, r.max_hit, pets)
 
 
 def fill_rows(tree: ttk.Treeview, rows: Sequence[DisplayRow]) -> None:
@@ -106,10 +124,14 @@ class TkApp:
         self._fights: dict[str, FightSummary] = {}
         self.recording = None  # a RecordingController (live sources only); see set_recording()
         self.ask_note: Callable[[], str | None] = self._ask_note
+        self.ask_test: Callable[[], tuple[str, float] | None] = self._ask_test  # (label, seconds) or None
+        self.tests_api = None    # the Runtime: arm_test(label, seconds) -> TestRun, cancel_test()
+        self.active_test = None  # the TestRun shown in the status line
+        self._tests: dict[str, TestResult] = {}
 
         self.root = root or tk.Tk()
         self.root.title("EQOA Parser")
-        self.root.geometry("500x840")
+        self.root.geometry("500x960")
         self.root.minsize(420, 420)
         self.top_var = tk.BooleanVar(master=self.root, value=always_on_top)
         self._apply_topmost()
@@ -131,6 +153,8 @@ class TkApp:
         bar = ttk.Frame(outer)
         bar.pack(fill="x")
         ttk.Checkbutton(bar, text="Always on top", variable=self.top_var, command=self._apply_topmost).pack(side="left")
+        self.test_button = ttk.Button(bar, text="Test", command=self.test_clicked, state="disabled")
+        self.test_button.pack(side="right", padx=(0, 4))
         self.mark_button = ttk.Button(bar, text="Mark", command=self.mark_clicked, state="disabled")
         self.mark_button.pack(side="right")
         self.record_button = ttk.Button(bar, text="Record", command=self.toggle_record, state="disabled")
@@ -157,6 +181,18 @@ class TkApp:
         run.pack(fill="x", pady=(6, 0))
         self.run_var = tk.StringVar(master=self.root)
         ttk.Label(run, textvariable=self.run_var, justify="left").pack(anchor="w")
+
+        tests = ttk.LabelFrame(outer, text="Tests (newest first)", padding=4)
+        tests.pack(fill="x", pady=(6, 0))
+        self.test_tree = ttk.Treeview(tests, columns=[c[0] for c in TEST_COLUMNS], show="headings",
+                                      selectmode="browse", height=3)
+        for key, text, width, anchor in TEST_COLUMNS:
+            self.test_tree.heading(key, text=text)
+            self.test_tree.column(key, width=width, anchor=anchor, stretch=(key == "label"))
+        self.test_tree.pack(fill="x")
+        self.test_detail_tree = make_breakdown_tree(tests, height=4)
+        self.test_detail_tree.pack(fill="x", pady=(4, 0))
+        self.test_tree.bind("<<TreeviewSelect>>", lambda e: self._show_test_detail())
 
         lst = ttk.LabelFrame(outer, text="Fights (newest first; grey prev = earlier runs)", padding=4)
         lst.pack(fill="both", expand=True, pady=(6, 0))
@@ -249,6 +285,9 @@ class TkApp:
         elif kind == "finished":
             self.set_run(msg[1])
             self.show_idle("Finished - source ended")
+        elif kind == "test":
+            self._insert_test(msg[1], select=True)
+            self._refresh_test_status()
         elif kind == "connection":
             self._connection_text = msg[1]
             self._refresh_status()
@@ -288,6 +327,91 @@ class TkApp:
             self.apply(("error", f"cannot record: {exc}"))
         self._sync_record()
 
+    # -- timed tests ---------------------------------------------------------------------------------
+    def set_tests(self, api, previous: Sequence[TestResult] = ()) -> None:
+        """Enable the Test button (`api` = the Runtime) and list today's earlier tests."""
+        self.tests_api = api
+        for r in previous:
+            self._insert_test(r, select=False)
+        self.test_button.configure(state="normal")
+
+    def _insert_test(self, r: TestResult, *, select: bool) -> None:
+        iid = self.test_tree.insert("", 0, values=test_cells(r))
+        self._tests[iid] = r
+        if select:
+            self.test_tree.selection_set(iid)
+            self._show_test_detail()
+
+    def _show_test_detail(self) -> None:
+        sel = self.test_tree.selection()
+        r = self._tests.get(sel[0]) if sel else None
+        self.test_detail_tree.delete(*self.test_detail_tree.get_children())
+        if r is not None:
+            fill_rows(self.test_detail_tree, result_rows(r))
+
+    def _ask_test(self) -> tuple[str, float] | None:
+        """Small modal dialog: label text and length in seconds (default 180)."""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Timed test")
+        dlg.transient(self.root)
+        dlg.resizable(False, False)
+        label_var = tk.StringVar(master=dlg, value="test")
+        secs_var = tk.StringVar(master=dlg, value="180")
+        body = ttk.Frame(dlg, padding=10)
+        body.pack()
+        ttk.Label(body, text="Label").grid(row=0, column=0, sticky="w")
+        ttk.Entry(body, textvariable=label_var, width=28).grid(row=0, column=1, pady=2)
+        ttk.Label(body, text="Length (seconds)").grid(row=1, column=0, sticky="w")
+        ttk.Entry(body, textvariable=secs_var, width=8).grid(row=1, column=1, sticky="w", pady=2)
+        note = tk.StringVar(master=dlg)
+        ttk.Label(body, textvariable=note, foreground="#a00").grid(row=2, column=0, columnspan=2, sticky="w")
+        out: list[tuple[str, float]] = []
+
+        def ok() -> None:
+            try:
+                secs = float(secs_var.get())
+            except ValueError:
+                secs = 0.0
+            if not 0 < secs < 86400:
+                note.set("Length must be a number of seconds above 0.")
+                return
+            out.append((label_var.get().strip() or "test", secs))
+            dlg.destroy()
+
+        btns = ttk.Frame(body)
+        btns.grid(row=3, column=0, columnspan=2, sticky="e", pady=(8, 0))
+        ttk.Button(btns, text="Start", command=ok).pack(side="left", padx=(0, 4))
+        ttk.Button(btns, text="Cancel", command=dlg.destroy).pack(side="left")
+        dlg.bind("<Return>", lambda e: ok())
+        dlg.bind("<Escape>", lambda e: dlg.destroy())
+        dlg.grab_set()
+        self.root.wait_window(dlg)
+        return out[0] if out else None
+
+    def test_clicked(self) -> None:
+        api = self.tests_api
+        if api is None:
+            return
+        if self.active_test is not None and self.active_test.active:
+            api.cancel_test()
+            self._refresh_test_status()
+            return
+        asked = self.ask_test()
+        if asked is None:
+            return
+        self.active_test = api.arm_test(*asked)
+        self._refresh_test_status()
+
+    def _refresh_test_status(self) -> None:
+        t = self.active_test
+        if t is not None and not t.active:
+            self.active_test = None
+        text = t.status_text() if t is not None and t.active else None
+        if text != getattr(self, "_test_text", None):
+            self._test_text = text
+            self._refresh_status()
+        self.test_button.configure(text="Cancel test" if text else "Test")
+
     def _ask_note(self) -> str | None:
         from tkinter import simpledialog
 
@@ -304,7 +428,7 @@ class TkApp:
 
     def _refresh_status(self) -> None:
         parts = [self._label, getattr(self, "_connection_text", None), getattr(self, "_pine_text", None),
-                 getattr(self, "_record_text", None)]
+                 getattr(self, "_record_text", None), getattr(self, "_test_text", None)]
         self._base_status = "  |  ".join(p for p in parts if p)
         if not self.status_var.get().startswith("ERROR"):
             self.status_var.set(self._base_status)
@@ -333,6 +457,8 @@ class TkApp:
         if self.closed_ui:
             return
         self.drain()
+        if self.active_test is not None:
+            self._refresh_test_status()  # the countdown follows engine time
         if self.recording is not None:
             self._sync_record()  # packet count in the status line; also notices a stopped writer
         self._after_id = self.root.after(self.refresh_ms, self._tick)

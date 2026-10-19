@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Callable, Sequence, TextIO
 
 from ..events import ACTOR_PET, ACTOR_YOU
+from ..testmode import TestResult
 from ..stats import ALL_CHARACTERS, ActorStats, FightSummary, RunSummary, effective_duration, group_rows, pet_name
 
 
@@ -71,6 +72,29 @@ def display_rows(summary: FightSummary, show_group: bool = False) -> list[Displa
         rows += [DisplayRow(a.actor, "other", a.total, a.dps, a.max_hit)
                  for a in sorted(rest, key=lambda a: (-a.total, a.actor))]
     return rows
+
+
+def result_rows(result: TestResult) -> list[DisplayRow]:
+    """Per-character breakdown of a timed test (DPS over the fixed test length), like display_rows."""
+    L = result.length_s
+    rows: list[DisplayRow] = []
+    for c in result.characters:
+        rows.append(DisplayRow(c.name, "player", c.player_total, c.player_total / L, c.player_max))
+        rows.append(DisplayRow(pet_name(c.name, c.pet_name), "pet", c.pet_total, c.pet_total / L, c.pet_max))
+        rows.append(DisplayRow(f"{c.name} combined", "combined", c.combined, c.dps))
+    if len(result.characters) >= 2:
+        rows.append(DisplayRow(ALL_CHARACTERS, "all", result.total, result.dps))
+    return rows
+
+
+def format_test(result: TestResult) -> str:
+    rows = result_rows(result)
+    width = max([10] + [len(r.label) + 5 for r in rows])
+    note = "" if result.complete else " (source ended early)"
+    lines = [f"=== Test '{result.label}': {result.length_s:g}s{note} ===",
+             f"  Total {result.total}  DPS {result.dps:.1f}  hits {result.hits}  biggest hit {result.max_hit}"]
+    lines += [_row_line(r, width) for r in rows]
+    return "\n".join(lines)
 
 
 def own_for(summary: FightSummary, fallback: Sequence[str] | None = None) -> Sequence[str] | None:
@@ -222,3 +246,6 @@ class ConsoleUI:
 
     def on_finished(self, run: RunSummary) -> None:
         self._print(format_run(run))
+
+    def on_test(self, result: TestResult) -> None:
+        self._print(format_test(result))

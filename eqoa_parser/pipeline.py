@@ -8,10 +8,11 @@ import threading
 from typing import Callable
 
 from .config import Config
-from .events import Event
+from .events import KIND_DAMAGE, Event
 from .parser import Parser
 from .segmenter import Fight, Segmenter
 from .sources import HEARTBEAT, LogSource
+from .testmode import TestResult, TestRun
 from .stats import FightSummary, RunSummary, summarize_fight, summarize_run
 
 LiveCallback = Callable[[FightSummary], None]
@@ -37,6 +38,7 @@ class Engine:
         on_live: LiveCallback | None = None,
         on_closed: ClosedCallback | None = None,
         on_finished: Callable[[], None] | None = None,
+        on_test: Callable[[TestResult], None] | None = None,  # once, when a timed test finishes
     ) -> None:
         self.config = config
         self.source = source
@@ -51,6 +53,8 @@ class Engine:
         self._on_live = on_live
         self._on_closed = on_closed
         self._on_finished = on_finished
+        self._on_test = on_test
+        self._test: TestRun | None = None
         self._closed: list[FightSummary] = []
         self._lock = threading.RLock()
         self._finished = False
@@ -82,14 +86,18 @@ class Engine:
             event = None if raw == HEARTBEAT else self.parser.parse(ts, raw)
         live: FightSummary | None = None
         with self._lock:
+            tested = self._step_test(ts, event)
             if event is None:
                 closed = self._segmenter.tick(ts)
             else:
                 closed = self._segmenter.feed(event)
                 cur = self._segmenter.current
                 if cur is not None and cur.events and cur.events[-1] is event:
-                    live = summarize_fight(cur, ongoing=True, own_actors=self._own_actors(), groups=self._groups(cur))
+                    live = summarize_fight(cur, ongoing=True, own_actors=self._own_actors(), groups=self._groups(cur),
+                                         pet_names=self._pet_names())
             summaries = [self._record(f) for f in closed]
+        if tested is not None and self._on_test is not None:
+            self._on_test(tested)
         for s in summaries:
             if self._on_closed is not None:
                 self._on_closed(s)
@@ -101,7 +109,45 @@ class Engine:
         fn = getattr(self.source, "own_actors", None)
         return list(fn()) if callable(fn) else None
 
-    def _groups(self, fight: Fight) -> list[dict] | None:
+    # -- timed test (docs/CONTRACTS.md "Phase 7"); the segmenter never sees it ---------------------------
+    @property
+    def test(self) -> TestRun | None:
+        return self._test
+
+    def arm_test(self, test: TestRun) -> None:
+        """Make `test` the current test (replacing a finished or cancelled one; an active one is cancelled)."""
+        with self._lock:
+            if self._test is not None:
+                self._test.cancel()
+            self._test = test
+
+    def cancel_test(self) -> None:
+        with self._lock:
+            if self._test is not None:
+                self._test.cancel()
+
+    def _step_test(self, ts: float, event: Event | None) -> TestResult | None:
+        """Feed the test (lock held); returns its result on the step it finishes."""
+        t = self._test
+        if t is None or not t.active:
+            return None
+        if event is None:
+            t.tick(ts)
+        elif event.kind == KIND_DAMAGE:
+            t.feed(event, self._groups(None), self._pet_names())
+        else:
+            t.tick(event.ts)
+        return t.result() if t.finished else None
+
+    def _pet_names(self) -> dict[str, str] | None:
+        """Pet actor key -> pet entity name (PINE only); None when none is known."""
+        fn = getattr(self.source, "character_groups", None)
+        if not callable(fn):
+            return None
+        out = {g.pet_key: g.pet_npc for g in fn() if getattr(g, "pet_npc", None)}
+        return out or None
+
+    def _groups(self, fight: Fight | None) -> list[dict] | None:
         """Characters followed by the source, as stored per fight: [{"name","player","pet"}]; None for text sources
         or while nothing is followed yet (= one "You")."""
         fn = getattr(self.source, "character_groups", None)
@@ -109,11 +155,12 @@ class Engine:
             return None
         # a character first seen after the fight ended is not part of it
         groups = [{"name": g.name, "key": g.player_key, "player": g.player_key, "pet": g.pet_key}
-                  for g in fn() if getattr(g, "first_ts", 0.0) <= fight.end_ts]
+                  for g in fn() if fight is None or getattr(g, "first_ts", 0.0) <= fight.end_ts]
         return groups or None
 
     def _record(self, fight: Fight) -> FightSummary:
-        s = summarize_fight(fight, own_actors=self._own_actors(), groups=self._groups(fight))
+        s = summarize_fight(fight, own_actors=self._own_actors(), groups=self._groups(fight),
+                           pet_names=self._pet_names())
         self._closed.append(s)
         return s
 
@@ -123,8 +170,14 @@ class Engine:
             if self._finished:
                 return
             self._finished = True
+            tested = None
+            if self._test is not None and self._test.active:
+                self._test.end_of_stream()
+                tested = self._test.result()
             summaries = [self._record(f) for f in self._segmenter.flush()]
         try:
+            if tested is not None and self._on_test is not None:
+                self._on_test(tested)
             for s in summaries:
                 if self._on_closed is not None:
                     self._on_closed(s)
@@ -144,7 +197,8 @@ class Engine:
             cur = self._segmenter.current
             if cur is None:
                 return None
-            return summarize_fight(cur, ongoing=True, own_actors=self._own_actors(), groups=self._groups(cur))
+            return summarize_fight(cur, ongoing=True, own_actors=self._own_actors(), groups=self._groups(cur),
+                                         pet_names=self._pet_names())
 
     def run_summary(self) -> RunSummary:
         """Over this run's closed fights only."""

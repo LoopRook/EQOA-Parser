@@ -16,6 +16,21 @@ from .pcapng import UdpDatagram
 from .protocol import read_varint
 
 _NAME = re.compile(rb"[A-Za-z][A-Za-z' -]+")
+_CHARACTER = re.compile(r"[A-Z][a-z]*(?:['-][A-Z]?[a-z]+)*")
+
+
+def is_character_name(name: str | None) -> bool:
+    """A player character's name: a capital letter, then lowercase letters, 3..15 characters in all. An apostrophe or
+    hyphen may join a further capitalised part (``O'Brien-Smith``)."""
+    return bool(name) and 3 <= len(name) <= 15 and _CHARACTER.fullmatch(name) is not None
+
+
+def is_entity_name(name: str) -> bool:
+    """A plausible NPC or player name from spawn data: starts with a capital letter or an article (``a ``, ``an ``,
+    ``the ``). Lowercase junk that happens to look like a word is not a name."""
+    return name[:1].isupper() or re.match(r"(?:a|an|the) \S", name, re.IGNORECASE) is not None
+
+
 _MARKER = b"\x82\x31"
 _BACK = 120
 
@@ -57,7 +72,7 @@ class NameTable:
             if j < 4:
                 continue
             name = raw.decode("ascii").rstrip(" ")
-            if len(name) >= 3:
+            if len(name) >= 3 and is_entity_name(name):
                 self._names[struct.unpack_from("<I", p, j - 4)[0]] = name
 
 
@@ -70,7 +85,8 @@ class OwnNames:
 
     On login or zone-in the server sends on the character's own connection a message with the zone file followed by
     the name: ``...data\tunaria.esf <varint> <u32 LE n> <n ASCII letters>``. Rule: after ``.esf`` skip one varint,
-    read u32 n (3..20), then n bytes matching ``[A-Za-z]+``. Only that connection's own server traffic counts
+    read u32 n (3..20), then n bytes matching ``[A-Za-z]+`` that form a character name (capital letter, then lowercase;
+    ``is_character_name``). Only that connection's own server traffic counts
     (connection = the datagram's destination port). A later name on the same connection replaces the earlier one.
     A character that was already logged in when the capture started never gets a name.
     """
@@ -97,6 +113,7 @@ class OwnNames:
                 if pos + 4 <= len(p):
                     n = struct.unpack_from("<I", p, pos)[0]
                     raw = p[pos + 4:pos + 4 + n]
-                    if 3 <= n <= 20 and len(raw) == n and _ALPHA.fullmatch(raw) is not None:
+                    if (3 <= n <= 20 and len(raw) == n and _ALPHA.fullmatch(raw) is not None
+                            and is_character_name(raw.decode("ascii"))):
                         self._names[dgram.dst_port] = raw.decode("ascii")
             i = p.find(_ESF, i + 1)

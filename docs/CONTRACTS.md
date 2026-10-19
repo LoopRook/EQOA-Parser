@@ -435,3 +435,59 @@ Record real fights from inside the app, so nobody needs pktmon or a terminal, an
 
 ## Unverified
 The live Record button needs Administrator and a running game; it is tested only with a fake live source.
+
+# Phase 7: timed tests, pet names (2026-10-19)
+Fixed-length DPS tests on a training dummy, so runs are comparable (fights end on an 8 s idle, so their lengths vary and
+pauses drag DPS down). Also: the pet's name per fight, and a fix for a junk character name.
+
+## `testmode.py` (core, stdlib only, no UI imports)
+- `TestRun(label, length_s)`: states `armed` -> `running` -> `done`, or `cancelled`. Time is EVENT/engine time (event
+  `ts`; heartbeats and non-event lines tick it), never the wall clock, so a replay gives the same answer at any speed and a
+  live test still ends on time when no events arrive.
+- The clock starts at the first `damage` Event whose actor is one of your own actors (the player or pet key of a followed
+  character; text sources: `you`/`pet`). `start = ts` of that event. Counted: own `damage` Events with
+  `start <= ts < start + length_s`. The test finishes when the clock reaches `start + length_s`: an Event exactly at
+  `start + length_s` ends it and is NOT counted. Before the first own damage it stays armed (misses, damage taken and
+  other people's damage do not start it).
+- DPS = total / `length_s` (fixed denominator, no minimum-duration rule).
+- Source stream ends while running: the result is finalized with `complete = False` (DPS still uses `length_s`).
+  Ends while armed: no result.
+- `TestResult`: `label`, `length_s`, `start_ts`, `complete`, `characters: [TestCharacter]`; properties `total`, `hits`,
+  `max_hit`, `dps`. `TestCharacter`: `name`, `key`, `player_total/hits/max`, `pet_total/hits/max`, `pet_name`
+  (the pet entity's name, or None), `combined`, `dps`. Characters are listed in first-damage order; a character that dealt
+  no counted damage is omitted.
+- `to_dict()` / `TestResult.from_dict()`; unknown extra keys are ignored.
+
+## Engine hook
+- `Engine.arm_test(test)` / `Engine.cancel_test()` / `Engine.test`; `on_test(result)` callback (constructor) fires once when
+  a test finishes. Every step (Event, heartbeat, unmatched line) first goes to the test, then on to the unchanged
+  segmenter: fight segmentation does not change. Characters come from the same `source.character_groups()` the fights use.
+
+## Pet name
+- `CharacterGroup.pet_npc`: with PINE on, the memory entity name of the character's pet, matched by pet id (the PINE own
+  character: memory `pet_id`; others: the learned pet id). Remembered per (connection, pet id), so it survives the entity
+  list changing. None with PINE off.
+- `FightSummary.pet_names: {pet_actor_key: name} | None` (additive; absent on load = None, omitted from `to_dict` when
+  None). `GroupRow.pet_npc`; display `Maige's pet (Djinni Vizier)` via `stats.pet_name(name, npc)`.
+
+## Persistence
+- `runs/<date>.json`, schema 1 unchanged: each run may carry an additive `"tests": [TestResult.to_dict()]`. Files without
+  it load as before. `RunStore.add_test(result)` saves; `RunStore.previous_tests` = tests of earlier runs the same day
+  (oldest first; unreadable entries are skipped and kept in the file).
+
+## UI
+- CLI: `--test SECONDS [--test-label TEXT]` (label default `test`) arms one test at start; after it finishes the
+  console prints the result. With `--live` the program then stops; with `--pcap` the replay runs to its end.
+- GUI: "Test" button -> dialog (label, length in seconds, default 180) -> status line `Test 'label': armed`, then
+  `m:ss left`; the button turns into "Cancel test". A "Tests" list (newest first: label, DPS, hits, biggest hit, pet name)
+  with the full per-character breakdown of the selected test. Works live and in `--pcap` replay.
+
+## Junk character names
+Cause: a saved run labelled a character `tsrq` (and its pet `tsrq's pet`). The key of a non-primary or later-named
+character is `Attributor.label`, fixed at the connection's first Event from `NameTable.get(player_id)`: the spawn
+heuristic accepted any `[A-Za-z][A-Za-z' -]+` after the `0x80|len 0x04` marker, so a 4-letter lowercase string that
+appears often in packets became a name. Fix (names.py): `is_character_name` = capital letter, then lowercase
+letters, 3..15 characters (an apostrophe or hyphen may join a further capitalised part: `O'Brien-Smith`). Used for the connection label, the display fallback from the NameTable and the own-name `.esf`
+rule. The NameTable now only stores names that start with a capital letter or an article (`a `, `an `, `the `, any
+case), so lowercase junk cannot become any entity's name. PINE names are authoritative and unchanged. Both name oracles
+(`expected_names.json`, the own-name sample) are unchanged.

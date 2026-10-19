@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .stats import FightSummary
+from .testmode import TestResult
 
 SCHEMA_VERSION = 1
 
@@ -106,6 +107,7 @@ class RunStore:
                 "fights": [],
             }
             self.previous_fights: list[PastFight] = self._read_previous()
+            self.previous_tests: list[TestResult] = self._read_previous_tests()
             self._doc["runs"].append(self.run)  # in memory only: a launch with no fights leaves no trace
         self._saved = False
 
@@ -192,6 +194,17 @@ class RunStore:
                     self._warn(f"warning: skipped an unreadable fight in run {run.get('run_id')} (kept in file)")
         return out
 
+    def _read_previous_tests(self) -> list[TestResult]:
+        out: list[TestResult] = []
+        for run in self._doc["runs"]:
+            tests = run.get("tests", [])
+            for raw in tests if isinstance(tests, list) else []:
+                try:
+                    out.append(TestResult.from_dict(raw))
+                except (TypeError, KeyError, ValueError, AttributeError):
+                    self._warn(f"warning: skipped an unreadable test in run {run.get('run_id')} (kept in file)")
+        return out
+
     # -- writing ---------------------------------------------------------------------------------
     @property
     def run_id(self) -> str:
@@ -199,6 +212,11 @@ class RunStore:
 
     def add_fight(self, summary: FightSummary) -> None:
         self.run["fights"].append(summary.to_dict())
+        self.save()
+
+    def add_test(self, result: TestResult) -> None:
+        """Append a finished timed test to the current run's additive "tests" list."""
+        self.run.setdefault("tests", []).append(result.to_dict())
         self.save()
 
     def save(self) -> None:

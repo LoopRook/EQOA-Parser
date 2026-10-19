@@ -54,6 +54,7 @@ class FightSummary:
     ongoing: bool = False       # True for the live (not yet closed) fight
     own_actors: list[str] | None = None  # actor names that counted toward combined_* (None = you + pet rule)
     groups: list[dict[str, Any]] | None = None  # characters: [{"name","player","pet"}] as known at close (None = one "You")
+    pet_names: dict[str, str] | None = None     # pet actor key -> pet entity name (PINE only; None = unknown)
 
     def actor(self, name: str) -> ActorStats:
         """Stats for `name`, or an all-zero ActorStats if the actor dealt no damage."""
@@ -68,7 +69,10 @@ class FightSummary:
         return self.actor(ACTOR_PET)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        if d["pet_names"] is None:
+            del d["pet_names"]  # additive field: files written without PINE stay as they were
+        return d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "FightSummary":
@@ -85,9 +89,11 @@ DEFAULT_GROUP_NAME = "You"
 ALL_CHARACTERS = "All characters"
 
 
-def pet_name(name: str) -> str:
-    """`Name's pet`; where no character name is known (the default group "You") the old wording `Pet`."""
-    return "Pet" if name == DEFAULT_GROUP_NAME else f"{name}'s pet"
+def pet_name(name: str, npc: str | None = None) -> str:
+    """`Name's pet`; where no character name is known (the default group "You") the old wording `Pet`.
+    With the pet entity's name (PINE): `Name's pet (Djinni Vizier)`."""
+    base = "Pet" if name == DEFAULT_GROUP_NAME else f"{name}'s pet"
+    return f"{base} ({npc})" if npc else base
 
 
 @dataclass
@@ -98,10 +104,11 @@ class GroupRow:
     combined_total: int
     combined_dps: float         # combined_total / effective_duration(fight)
     key: str = ""               # stable identity of the character (its player actor key); the name may change
+    pet_npc: str | None = None  # the pet entity's name when known (PINE)
 
     @property
     def pet_name(self) -> str:
-        return pet_name(self.name)
+        return pet_name(self.name, self.pet_npc)
 
 
 def _legacy_groups(summary: FightSummary) -> list[dict[str, Any]]:
@@ -128,7 +135,8 @@ def group_rows(summary: FightSummary) -> list[GroupRow]:
     for g in groups:
         p, q = summary.actor(g["player"]), summary.actor(g["pet"])
         total = p.total + q.total
-        rows.append(GroupRow(g["name"], p, q, total, total / eff, g.get("key") or g["player"]))
+        rows.append(GroupRow(g["name"], p, q, total, total / eff, g.get("key") or g["player"],
+                             (summary.pet_names or {}).get(g["pet"])))
     return rows
 
 
@@ -190,7 +198,7 @@ class RunSummary:
 
 def summarize_fight(
     fight: Fight, *, ongoing: bool = False, own_actors: Sequence[str] | None = None,
-    groups: Sequence[dict[str, Any]] | None = None,
+    groups: Sequence[dict[str, Any]] | None = None, pet_names: dict[str, str] | None = None,
 ) -> FightSummary:
     """`own_actors`: actor names that count toward combined_total/combined_dps/top_abilities (several followed
     characters and their pets). None = the original rule: "you" + "pet"."""
@@ -239,6 +247,7 @@ def summarize_fight(
         top_abilities=rows[:TOP_ABILITIES], ongoing=ongoing,
         own_actors=None if own_actors is None else list(own_actors),
         groups=None if groups is None else [dict(g) for g in groups],
+        pet_names=dict(pet_names) if pet_names else None,
     )
 
 

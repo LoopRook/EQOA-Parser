@@ -40,7 +40,7 @@ from ..events import (
     Event,
 )
 from .memory import MemorySnapshot
-from .names import NameTable, OwnNames
+from .names import NameTable, OwnNames, is_character_name
 from .protocol import HpChange, Record, Swing
 
 PET_WINDOW = 1.0  # seconds between a Swing and the player's extended HpChange at the same target
@@ -61,6 +61,7 @@ class CharacterGroup:
     port: int
     entity_id: int | None
     first_ts: float = 0.0   # time of the connection's first Event: a fight that ended earlier doesn't list the group
+    pet_npc: str | None = None  # the pet entity's name from game memory (PINE), if known
 
 
 class Attributor:
@@ -103,6 +104,8 @@ class Attributor:
         self.primary = bool(self._claim(self)) if self._claim is not None else True
         if not self.primary:
             known = self.names.get(self.player_id) if self.names is not None and self.player_id is not None else None
+            if not is_character_name(known):
+                known = None  # a spawn-heuristic fragment ("tsrq") must not become a character's key
             self.label = known or f"char:{conn}"
             if self._unique_label is not None:
                 self.label = self._unique_label(self.label)
@@ -220,6 +223,7 @@ class ConnectionRouter:
         self._snap = MemorySnapshot()
         self._member_keys: dict[int, str] = {}   # member id -> actor key, fixed at its first Event
         self._member_first: dict[int, float] = {}
+        self._pet_seen: dict[tuple[int, int], str] = {}
         self._fallback_feeder: int | None = None
         self.names = names
         self.own_names = own_names
@@ -351,7 +355,8 @@ class ConnectionRouter:
             if name is None and self.own_names is not None:
                 name = self.own_names.get(conn)
             if name is None and a.player_id is not None and self.names is not None:
-                name = self.names.get(a.player_id)
+                guess = self.names.get(a.player_id)
+                name = guess if is_character_name(guess) else None
             if name is None:
                 name = "You" if a.primary else (a.label or f"char:{conn}")
             base, n = name, 1
@@ -359,10 +364,26 @@ class ConnectionRouter:
                 n += 1
                 name = f"{base} ({n})"
             used.add(name)
-            out.append(CharacterGroup(name, a.player_label(), a.pet_label(), conn, a.player_id, a.first_ts))
+            out.append(CharacterGroup(name, a.player_label(), a.pet_label(), conn, a.player_id, a.first_ts,
+                                      self._pet_npc(conn, a)))
         for mid, key in self._member_keys.items():  # group members, after your own characters
             out.append(CharacterGroup(key, key, f"{key}'s pet", self._feeder() or 0, mid, self._member_first[mid]))
         return out
+
+    def _pet_npc(self, conn: int, a: Attributor) -> str | None:
+        """The pet entity's name from game memory (PINE only), matched by pet id: for the PINE character memory's own
+        pet id, else the learned pet id. Remembered per (connection, pet id) because the entity list changes."""
+        if self.names is None or self.memory is None:
+            return None
+        pid = a.pet_id
+        if a.player_id is not None and a.player_id == self._snap.own_id and self._snap.pet_id:
+            pid = self._snap.pet_id
+        if pid is None:
+            return None
+        name = self.names.memory_name(pid)
+        if name:
+            self._pet_seen[(conn, pid)] = name
+        return self._pet_seen.get((conn, pid))
 
     def _on_role(self, attr: Attributor, conn: int) -> None:
         if conn not in self._role_order:
