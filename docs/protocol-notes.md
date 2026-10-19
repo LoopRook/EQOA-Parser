@@ -51,3 +51,16 @@ PCSX2 network mode is DEV9 **Sockets**, so game traffic is ordinary UDP from `pc
 
 Scratch analysis scripts (pcapng reader, sequence matcher, record decoder) are in the session scratchpad. They'll be
 rebuilt as proper modules with tests when this becomes code.
+
+## Update 2026-10-19: pet attribution confirmed
+A controlled capture on a magician (`fixtures/real/cap5_mage_spells_then_pet.pcapng`, covered by `tests/test_real_cap5.py`)
+settles the you-vs-pet question:
+- **CONFIRMED:** the character's own spells arrive as **plain** `db 00` records: all 8 casts the user saw, in order.
+- **CONFIRMED:** every pet action arrives as an **extended** `db 00` record credited to the owner. That covers melee (~400-640,
+  with a pet `b1 00` swing 0.5 s before), pet abilities (1,144-2,817, no swing) and 1-damage procs.
+- **Trailer:** the extra 3 bytes are a colour. FrontiersForge reads them as an RGB number colour; this pet's are always
+  `ff 00 00` (red). The necro pet in cap2 used `1a e6 db`, so the colour may vary, but any trailer means "pet". The meter
+  keys on the presence of the trailer, not the colour.
+- Seen in a 2-emulator capture: a player's own melee *can* have `b1 00` swing records (on the other emulator's connection).
+  The meter doesn't rely on swing records for player damage.
+- `tools/sanitize_pcapng.py` turns a raw capture into a publishable fixture (server packets only, scrubbed headers).
