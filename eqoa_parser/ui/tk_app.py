@@ -104,6 +104,8 @@ class TkApp:
         self._after_id: str | None = None
         self.closed_ui = False
         self._fights: dict[str, FightSummary] = {}
+        self.recording = None  # a RecordingController (live sources only); see set_recording()
+        self.ask_note: Callable[[], str | None] = self._ask_note
 
         self.root = root or tk.Tk()
         self.root.title("EQOA Parser")
@@ -129,6 +131,10 @@ class TkApp:
         bar = ttk.Frame(outer)
         bar.pack(fill="x")
         ttk.Checkbutton(bar, text="Always on top", variable=self.top_var, command=self._apply_topmost).pack(side="left")
+        self.mark_button = ttk.Button(bar, text="Mark", command=self.mark_clicked, state="disabled")
+        self.mark_button.pack(side="right")
+        self.record_button = ttk.Button(bar, text="Record", command=self.toggle_record, state="disabled")
+        self.record_button.pack(side="right", padx=(0, 4))
         self._label = source_label
         self._base_status = source_label
         self.status_var = tk.StringVar(master=self.root, value=source_label)
@@ -252,8 +258,53 @@ class TkApp:
         elif kind == "error":
             self.status_var.set(f"ERROR: {msg[1]}" if msg[1] else self._base_status)
 
+    # -- recording ---------------------------------------------------------------------------------
+    def set_recording(self, controller) -> None:
+        """Enable the Record/Mark buttons for a live source (None = replay: both stay disabled)."""
+        self.recording = controller
+        self._sync_record()
+
+    def _sync_record(self) -> None:
+        rec = self.recording
+        active = rec is not None and rec.active
+        self.record_button.configure(text="Stop recording" if active else "Record",
+                                     state="normal" if rec is not None else "disabled")
+        self.mark_button.configure(state="normal" if active else "disabled")
+        text = rec.status_text() if rec is not None else None
+        if text != getattr(self, "_record_text", None):
+            self._record_text = text
+            self._refresh_status()
+
+    def toggle_record(self) -> None:
+        rec = self.recording
+        if rec is None:
+            return
+        try:
+            if rec.active:
+                rec.stop()
+            else:
+                rec.start()
+        except OSError as exc:
+            self.apply(("error", f"cannot record: {exc}"))
+        self._sync_record()
+
+    def _ask_note(self) -> str | None:
+        from tkinter import simpledialog
+
+        return simpledialog.askstring("Mark", "Short note for this moment:", initialvalue="mark", parent=self.root)
+
+    def mark_clicked(self) -> None:
+        rec = self.recording
+        if rec is None or not rec.active:
+            return
+        note = self.ask_note()
+        if note is None:  # cancelled
+            return
+        rec.mark(note.strip() or "mark")
+
     def _refresh_status(self) -> None:
-        parts = [self._label, getattr(self, "_connection_text", None), getattr(self, "_pine_text", None)]
+        parts = [self._label, getattr(self, "_connection_text", None), getattr(self, "_pine_text", None),
+                 getattr(self, "_record_text", None)]
         self._base_status = "  |  ".join(p for p in parts if p)
         if not self.status_var.get().startswith("ERROR"):
             self.status_var.set(self._base_status)
@@ -282,6 +333,8 @@ class TkApp:
         if self.closed_ui:
             return
         self.drain()
+        if self.recording is not None:
+            self._sync_record()  # packet count in the status line; also notices a stopped writer
         self._after_id = self.root.after(self.refresh_ms, self._tick)
 
     def start_polling(self) -> None:

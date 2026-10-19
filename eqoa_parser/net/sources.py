@@ -27,11 +27,14 @@ class PacketSource:
     def __init__(self, config: Config, memory=None) -> None:
         self.config = config
         self.memory = memory  # optional MemoryEnricher (PINE); None = off
+        self.pine_note = "PINE: off"  # status text while memory is None
         self.decoder = PacketDecoder(config.net.server_ip)
         self.names = NameTable(config.net.server_ip)
         self.own_names = OwnNames(config.net.server_ip)
         self.router = ConnectionRouter(config, names=self.names, own_names=self.own_names, memory=memory)
         self._closed = threading.Event()
+        self._recorder = None       # object with write(UdpDatagram) -> bool; see net/pcapng_writer.py
+        self._recorder_lock = threading.Lock()
         self.datagrams = 0          # datagrams offered to the decoder
         self.server_datagrams = 0   # ... that came from net.server_ip
         self.records = 0            # protocol records decoded (after dedupe)
@@ -43,7 +46,9 @@ class PacketSource:
 
     def pine_status(self) -> str:
         """Status line text: ``PINE: off`` / ``PINE: on (slot N), group of K`` / ``PINE: not reachable``."""
-        return "PINE: off" if self.memory is None else self.memory.status_text()
+        if self.memory is None:
+            return self.pine_note
+        return self.memory.status_text()
 
     def own_actors(self) -> list[str]:
         """Actor names emitted for followed connections so far, ``you``/``pet`` first (first-seen order after)."""
@@ -53,8 +58,25 @@ class PacketSource:
         """Followed characters, primary first; display names may change as names arrive (keys never do)."""
         return self.router.character_groups()
 
+    def attach_recorder(self, recorder) -> None:
+        """Pass every datagram to ``recorder.write`` from now on (any thread, any time). The recorder itself decides
+        what it keeps (PcapngWriter keeps only server packets)."""
+        with self._recorder_lock:
+            self._recorder = recorder
+
+    def detach_recorder(self) -> None:
+        with self._recorder_lock:
+            self._recorder = None
+
     def events_from(self, dgram: UdpDatagram) -> list[Event]:
         out: list[Event] = []
+        with self._recorder_lock:
+            rec = self._recorder
+        if rec is not None:
+            try:
+                rec.write(dgram)
+            except Exception:  # recording must never take the meter down; stop it instead
+                self.detach_recorder()
         self.own_names.feed(dgram)
         self.names.feed(dgram)  # names first, so a name in this datagram resolves its own records
         self.datagrams += 1

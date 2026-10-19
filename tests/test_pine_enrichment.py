@@ -280,3 +280,56 @@ def test_make_source_without_pine_has_no_memory():
     args = app.parse_args(["--pcap", str(ROOT / "fixtures/real/cap5_mage_spells_then_pet.pcapng"), "--no-gui"])
     src, _ = app.make_source(args, app.make_config(args))
     assert src.memory is None and src.pine_status() == "PINE: off"
+
+
+# ---- regressions: replay never touches PINE; renamed character stays one character -------------------------------
+def test_replay_with_pine_enabled_never_contacts_pine(monkeypatch, tmp_path):
+    import socket
+    from eqoa_parser import pine as pine_mod
+
+    def boom(*a, **k):
+        raise AssertionError("PINE must not be contacted in replay mode")
+
+    monkeypatch.setattr(socket, "create_connection", boom)
+    monkeypatch.setattr(pine_mod.PineClient, "connect", boom)
+    monkeypatch.setattr(MemoryEnricher, "start", boom)
+    monkeypatch.setattr(MemoryEnricher, "poll_once", boom)
+    path = ROOT / "fixtures" / "real" / "cap5_mage_spells_then_pet.pcapng"
+    args = app.parse_args(["--pcap", str(path), "--pine", "--no-gui", "--runs-dir", str(tmp_path)])
+    cfg = app.make_config(args)
+    assert cfg.pine.enabled
+    src, _ = app.make_source(args, cfg)
+    assert src.memory is None and src.pine_status() == "PINE: off in replay"
+    assert any(not isinstance(ev, str) for _ts, ev in src)
+
+
+def _fight(fid, t0, name, key="you", pet="pet", dmg=100):
+    from eqoa_parser.events import Event
+    from eqoa_parser.segmenter import Fight
+    from eqoa_parser.stats import summarize_fight
+
+    evs = [Event(t0, key, "mob", dmg, None, "damage", ""), Event(t0 + 5, key, "mob", dmg, None, "damage", "")]
+    group = {"name": name, "player": key, "pet": pet}
+    if key != "you" or name != "You":
+        group["key"] = key
+    return summarize_fight(Fight(fid, t0, t0 + 5, evs), own_actors=[key], groups=[group])
+
+
+def test_renamed_character_is_one_character_in_run():
+    from eqoa_parser.stats import character_runs
+
+    runs = character_runs([_fight(1, 0, "You"), _fight(2, 100, "Maige"), _fight(3, 200, "Maige")])
+    assert [(c.name, c.total) for c in runs] == [("Maige", 600)]
+    # a later "You" (name unknown again) never hides the real name; old stored groups without "key" fall back to player
+    runs = character_runs([_fight(1, 0, "Maige"), _fight(2, 100, "You")])
+    assert [(c.name, c.total) for c in runs] == [("Maige", 400)]
+
+
+def test_two_characters_stay_two_when_one_is_renamed():
+    from eqoa_parser.stats import ALL_CHARACTERS, character_runs
+
+    f1 = _fight(1, 0, "You")
+    f2 = _fight(2, 100, "Maige")
+    g = _fight(3, 200, "Zaptir", key="Zaptir", pet="Zaptir's pet")
+    runs = character_runs([f1, f2, g])
+    assert [(c.name, c.total) for c in runs] == [("Maige", 400), ("Zaptir", 200), (ALL_CHARACTERS, 600)]

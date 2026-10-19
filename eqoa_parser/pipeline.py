@@ -108,7 +108,7 @@ class Engine:
         if not callable(fn):
             return None
         # a character first seen after the fight ended is not part of it
-        groups = [{"name": g.name, "player": g.player_key, "pet": g.pet_key}
+        groups = [{"name": g.name, "key": g.player_key, "player": g.player_key, "pet": g.pet_key}
                   for g in fn() if getattr(g, "first_ts", 0.0) <= fight.end_ts]
         return groups or None
 

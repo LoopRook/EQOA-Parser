@@ -64,6 +64,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="also read group members and names from the game's memory over PINE (read-only; PCSX2 "
                         "Settings > Advanced > PINE must be on); uses pine.slot")
     p.add_argument("--pine-slot", type=_port, metavar="N", help="PINE slot to use with --pine (config pine.slot)")
+    p.add_argument("--record", nargs="?", const="", metavar="FILE",
+                   help="with --live: save the game server's packets of this whole session to a .pcapng (default "
+                        "name captures/EQOA-<date>-<time>.pcapng); safe to share, it holds no client packets")
     p.add_argument("--speed", type=_finite_float, metavar="X",
                    help="replay speed multiplier; 0 = as fast as possible (default: 1.0 GUI, 0 with --no-gui)")
     p.add_argument("--no-gui", action="store_true", help="print to stdout instead of opening a window")
@@ -89,6 +92,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             parser.error("--speed only applies to --pcap and --replay")
     if args.idle_timeout is not None and args.idle_timeout <= 0:
         parser.error("--idle-timeout must be > 0")
+    if args.record is not None and not args.live:
+        parser.error("--record only works with --live")
     if args.pine_slot is not None and not args.pine:
         parser.error("--pine-slot needs --pine")
     return args
@@ -131,13 +136,12 @@ def make_source(args: argparse.Namespace, cfg: Config):
         if not Path(args.pcap).is_file():
             raise StartupError(f"capture file not found: {args.pcap}")
         check_pcapng_magic(args.pcap)
-        memory = _make_memory(cfg)
-        try:
-            source = PcapReplaySource(args.pcap, cfg, speed=speed, memory=memory)
+        try:  # PINE reads the LIVE game: never mixed into a recording (see pine_status)
+            source = PcapReplaySource(args.pcap, cfg, speed=speed)
         except ValueError as exc:  # B's constructor validates the section header
-            if memory is not None:
-                memory.close()
             raise StartupError(f"{args.pcap}: {exc}") from exc
+        if cfg.pine.enabled:
+            source.pine_note = "PINE: off in replay"
         return source, f"pcap:{args.pcap}"
     if args.live:
         from .net.capture import CaptureError, RawCapture
@@ -330,7 +334,20 @@ def run_console(cfg: Config, source: Any, label: str) -> int:
     return 0
 
 
-def run_gui(cfg: Config, source: Any, label: str, app_factory=None) -> int:
+def make_recording(cfg: Config, source: Any, args: argparse.Namespace | None = None):
+    """A RecordingController for live packet sources (else None); starts it when ``--record`` was given."""
+    if not hasattr(source, "attach_recorder") or not getattr(args, "live", True):
+        return None
+    from .recording import RecordingController
+
+    rec = RecordingController(source, PROJECT_ROOT / "captures", cfg.net.server_ip)
+    want = getattr(args, "record", None)
+    if want is not None:
+        rec.start(want or None)
+    return rec
+
+
+def run_gui(cfg: Config, source: Any, label: str, app_factory=None, recording=None) -> int:
     from .ui.tk_app import TkApp
 
     store = RunStore(cfg.runs_dir, label)
@@ -360,6 +377,8 @@ def run_gui(cfg: Config, source: Any, label: str, app_factory=None) -> int:
     provider = own_actors_provider(source)
     if provider is not None:
         window.own_provider = provider
+    if recording is not None and hasattr(window, "set_recording"):
+        window.set_recording(recording)
     holder["rt"] = rt
 
     def work() -> None:
@@ -395,13 +414,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _fail(f"invalid YAML: {exc}")
     except (OSError, ValueError, RuntimeError) as exc:
         return _fail(str(exc))
+    recording = None
     try:
+        recording = make_recording(cfg, source, args)
+        if recording is not None and recording.active:
+            print(f"recording to {recording.path}", file=sys.stderr)
         if args.no_gui:
             return run_console(cfg, source, label)
-        return run_gui(cfg, source, label)
+        if recording is None:
+            return run_gui(cfg, source, label)
+        return run_gui(cfg, source, label, recording=recording)
     except PineError as exc:
         return _fail(f"emulator connection failed: {exc}")
     except CaptureError as exc:
         return _fail(_with_doc(exc))
     except OSError as exc:
         return _fail(str(exc))
+    finally:
+        if recording is not None:
+            recording.stop()

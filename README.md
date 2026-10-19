@@ -40,6 +40,14 @@ normal program.
 
 It's a passive tool, but it's still worth checking Sandstorm's rules on third-party programs before you use it.
 
+## Recording a fight
+
+Press **Record** in the window to save the server's packets to a `.pcapng` file, and **Mark** to add a short note at the
+current moment (for example "pet died"); press **Stop recording** when you are done. Files go to a `captures` folder next
+to `EQOAParser.exe`, named like `EQOA-20261019-203000.pcapng`, with your notes in a matching `.marks.txt`. A recording
+only holds packets the server sent to you, never anything your PC sent, so it is safe to share. From a terminal,
+`--live --record` records the whole session.
+
 ## Two emulators
 
 The meter follows every copy of PCSX2 talking to the server and gives each character their own rows. If you only want

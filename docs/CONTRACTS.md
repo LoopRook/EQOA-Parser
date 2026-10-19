@@ -397,3 +397,41 @@ before.
 
 ## Unverified
 Whether the server sends other players' pet damage to a group member's client as extended records is not verified.
+
+# Phase 6: recording and pre-release (main chat, 2026-10-19)
+Record real fights from inside the app, so nobody needs pktmon or a terminal, and build a folder to test with a double-click.
+
+## `net/pcapng_writer.py` (core, stdlib only)
+- `PcapngWriter(path, server_ip)`: minimal pcapng. SHB with no options, one IDB with link type 101 (raw IPv4) and no
+  options (the default resolution is microseconds), then one EPB per datagram holding a rebuilt IPv4 + UDP header around
+  the payload (IP checksum filled in, UDP checksum 0). Timestamps are integer microseconds.
+- PRIVACY: `write(dgram)` stores only datagrams whose `src_ip == server_ip` (server to client) and returns whether it
+  did. The filter lives in the writer so no caller can bypass it. The file carries no OS, host, interface or user
+  strings.
+- Thread-safe. Flushes at least every 0.5 s of activity and on `mark`/`close`, so a crash leaves a readable file (the
+  reader already ignores a truncated tail). `close()` is idempotent; `write` after close returns False. A write error
+  (full disk) is stored in `error` and recording stops; it never raises into the meter.
+- `mark(text)` appends `<ISO local time>\t<epoch ts>\t<text>` to the sidecar `<capture>.marks.txt` (tabs and newlines in
+  the text become spaces).
+
+## Source hook
+- `PacketSource.attach_recorder(rec)` / `detach_recorder()` (any time, any thread). Every datagram offered to
+  `events_from` is passed to the attached recorder first. `rec.write` must not raise; the source also drops the recorder
+  if it does.
+
+## App
+- `app.RecordingController(source, captures_dir, server_ip)`: `start(path=None)` (default name
+  `EQOA-YYYYMMDD-HHMMSS.pcapng`), `stop()`, `mark(text)`, `active`, `path`, `packets`, `status_text()`
+  (`Recording: <file> (<n> packets)`).
+- Captures folder: `captures/` next to the exe when frozen, the project root otherwise.
+- GUI: "Record" / "Stop recording" toggle and "Mark" (asks for a note, default "mark"; enabled only while recording).
+  Both disabled unless the source is live. The status line shows the recording status.
+- Console/CLI: `--record [FILE]` (live only) records the whole session; without FILE the default name is used. The GUI
+  also honours it (recording is already on at start).
+
+## Pre-release folder
+- `packaging/build-prerelease.bat` runs the normal exe build and assembles the git-ignored `prerelease/` with both exes,
+  `READ-ME-FIRST.txt` and a `config.yaml` that is `config.dist.yaml` plus `pine: {enabled: true, slot: 28012}`.
+
+## Unverified
+The live Record button needs Administrator and a running game; it is tested only with a fake live source.

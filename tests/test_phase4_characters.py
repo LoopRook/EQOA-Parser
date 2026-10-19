@@ -80,9 +80,9 @@ def test_cap2_default_groups_per_fight(tmp_path):
     closed, src = run_capture(CAP2, tmp_path)
     assert [(f.combined_total) for f in closed] == [20670, 675]
     assert [g["name"] for g in closed[0].groups] == ["You"]            # Zecron's connection first appears later
-    assert closed[0].groups == [{"name": "You", "player": "you", "pet": "pet"}]
-    assert closed[1].groups == [{"name": "You", "player": "you", "pet": "pet"},
-                                {"name": "Zecron", "player": "Zecron", "pet": "Zecron's pet"}]   # keys = the label fixed at its first Event
+    assert closed[0].groups == [{"name": "You", "key": "you", "player": "you", "pet": "pet"}]
+    assert closed[1].groups == [{"name": "You", "key": "you", "player": "you", "pet": "pet"},
+                                {"name": "Zecron", "key": "Zecron", "player": "Zecron", "pet": "Zecron's pet"}]   # keys = the label fixed at its first Event
     g = src.character_groups()
     assert [(x.name, x.port, x.player_key, x.pet_key) for x in g][0] == ("You", 21173, "you", "pet")
     assert g[1].name == "Zecron" and g[1].port == 20605 and g[1].entity_id == 0x1751CB82
@@ -99,7 +99,7 @@ def test_cap2_default_groups_per_fight(tmp_path):
 def test_cap2_connection_20605_is_one_group_named_zecron(tmp_path):
     closed, src = run_capture(CAP2, tmp_path, local_port=20605)
     (f,) = closed
-    assert f.groups == [{"name": "Zecron", "player": "you", "pet": "pet"}]
+    assert f.groups == [{"name": "Zecron", "key": "you", "player": "you", "pet": "pet"}]
     (r,) = group_rows(f)
     assert (r.name, r.pet_name, r.player.total, r.pet.total, r.combined_total) == ("Zecron", "Zecron's pet", 0, 675, 675)
     assert [x.label for x in display_rows(f)] == ["Zecron", "Zecron's pet", "Zecron combined"]   # no All line

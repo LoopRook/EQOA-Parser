@@ -97,6 +97,7 @@ class GroupRow:
     pet: ActorStats
     combined_total: int
     combined_dps: float         # combined_total / effective_duration(fight)
+    key: str = ""               # stable identity of the character (its player actor key); the name may change
 
     @property
     def pet_name(self) -> str:
@@ -127,7 +128,7 @@ def group_rows(summary: FightSummary) -> list[GroupRow]:
     for g in groups:
         p, q = summary.actor(g["player"]), summary.actor(g["pet"])
         total = p.total + q.total
-        rows.append(GroupRow(g["name"], p, q, total, total / eff))
+        rows.append(GroupRow(g["name"], p, q, total, total / eff, g.get("key") or g["player"]))
     return rows
 
 
@@ -141,22 +142,24 @@ class CharacterRun:
 
 
 def character_runs(summaries: Sequence[FightSummary]) -> list[CharacterRun]:
-    """Per-character run totals (characters matched across fights by display name, first-seen order), then one
+    """Per-character run totals (characters matched across fights by stable key, shown under the latest name, first-seen order), then one
     ALL_CHARACTERS line when there are 2+ characters. Best fight = highest combined DPS of that character."""
     runs: dict[str, CharacterRun] = {}
     secs: dict[str, float] = {}
     for f in summaries:
         for r in group_rows(f):
-            c = runs.setdefault(r.name, CharacterRun(r.name))
+            c = runs.setdefault(r.key, CharacterRun(r.name))
+            if r.name != DEFAULT_GROUP_NAME or c.name == DEFAULT_GROUP_NAME:
+                c.name = r.name  # latest known name (a later "You" never replaces a real name)
             if r.combined_total <= 0:
                 continue
             c.total += r.combined_total
-            secs[r.name] = secs.get(r.name, 0.0) + effective_duration(f.duration)
+            secs[r.key] = secs.get(r.key, 0.0) + effective_duration(f.duration)
             if c.best_fight_id is None or r.combined_dps > c.best_dps:
                 c.best_fight_id, c.best_dps = f.fight_id, r.combined_dps
     out = list(runs.values())
-    for c in out:
-        c.dps = c.total / secs[c.name] if secs.get(c.name) else 0.0
+    for k, c in runs.items():
+        c.dps = c.total / secs[k] if secs.get(k) else 0.0
     if len(out) >= 2:
         total = sum(c.total for c in out)
         active = [f for f in summaries if any(r.combined_total > 0 for r in group_rows(f))]
