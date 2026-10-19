@@ -24,12 +24,13 @@ from .protocol import PacketDecoder
 class PacketSource:
     """Base: datagrams -> records -> Events. Subclasses provide the datagram iterator."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, memory=None) -> None:
         self.config = config
+        self.memory = memory  # optional MemoryEnricher (PINE); None = off
         self.decoder = PacketDecoder(config.net.server_ip)
         self.names = NameTable(config.net.server_ip)
         self.own_names = OwnNames(config.net.server_ip)
-        self.router = ConnectionRouter(config, names=self.names, own_names=self.own_names)
+        self.router = ConnectionRouter(config, names=self.names, own_names=self.own_names, memory=memory)
         self._closed = threading.Event()
         self.datagrams = 0          # datagrams offered to the decoder
         self.server_datagrams = 0   # ... that came from net.server_ip
@@ -39,6 +40,10 @@ class PacketSource:
     def has_game_traffic(self) -> bool:
         """False if no datagram from net.server_ip was seen (so far / after iteration): the app can warn."""
         return self.server_datagrams > 0
+
+    def pine_status(self) -> str:
+        """Status line text: ``PINE: off`` / ``PINE: on (slot N), group of K`` / ``PINE: not reachable``."""
+        return "PINE: off" if self.memory is None else self.memory.status_text()
 
     def own_actors(self) -> list[str]:
         """Actor names emitted for followed connections so far, ``you``/``pet`` first (first-seen order after)."""
@@ -69,6 +74,8 @@ class PacketSource:
 
     def close(self) -> None:
         self._closed.set()
+        if self.memory is not None:
+            self.memory.close()
 
 
 class PcapReplaySource(PacketSource):
@@ -76,8 +83,9 @@ class PcapReplaySource(PacketSource):
     Event ts = datagram ts. speed 0 = as fast as possible; speed > 0 sleeps scaled gaps and yields heartbeats
     like ReplaySource."""
 
-    def __init__(self, path: str | Path, config: Config, speed: float = 0.0, heartbeat_interval: float = 0.25) -> None:
-        super().__init__(config)
+    def __init__(self, path: str | Path, config: Config, speed: float = 0.0, heartbeat_interval: float = 0.25,
+                 memory=None) -> None:
+        super().__init__(config, memory)
         if speed < 0:
             raise ValueError("speed must be >= 0")
         if heartbeat_interval <= 0:
@@ -111,8 +119,8 @@ class LivePacketSource(PacketSource):
     ``(time.time(), HEARTBEAT)`` item so idle fights close. A ``CaptureError`` (e.g. not Administrator) is raised on
     the first ``next()``. ``close()`` stops iteration promptly and closes the capture."""
 
-    def __init__(self, config: Config, capture_factory=None) -> None:
-        super().__init__(config)
+    def __init__(self, config: Config, capture_factory=None, memory=None) -> None:
+        super().__init__(config, memory)
         self._factory = capture_factory
         self._capture = None
 

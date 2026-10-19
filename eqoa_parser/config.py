@@ -30,6 +30,7 @@ PROJECT_ROOT = find_project_root()
 
 @dataclass
 class PineConfig:
+    enabled: bool = False           # Phase 5: read group members and names from game memory (read-only)
     slot: int = 28011               # PINE slot; TCP port on Windows, socket-name suffix on Linux
     host: str = "127.0.0.1"         # TCP host (Windows transport)
     unix_socket: str | None = None  # explicit UNIX socket path override (Linux); None = derive per PINE spec

@@ -42,6 +42,9 @@ class QueueSink:
     def on_error(self, message: str | None) -> None:  # None = recovered
         self.q.put(("error", message))
 
+    def on_pine(self, text: str) -> None:
+        self.q.put(("pine", text))
+
 
 FIGHT_COLUMNS = (
     ("run", "Run", 38, "center"),
@@ -241,11 +244,19 @@ class TkApp:
             self.set_run(msg[1])
             self.show_idle("Finished - source ended")
         elif kind == "connection":
-            self._base_status = f"{self._label}  |  {msg[1]}"
-            if not self.status_var.get().startswith("ERROR"):
-                self.status_var.set(self._base_status)
+            self._connection_text = msg[1]
+            self._refresh_status()
+        elif kind == "pine":
+            self._pine_text = msg[1]
+            self._refresh_status()
         elif kind == "error":
             self.status_var.set(f"ERROR: {msg[1]}" if msg[1] else self._base_status)
+
+    def _refresh_status(self) -> None:
+        parts = [self._label, getattr(self, "_connection_text", None), getattr(self, "_pine_text", None)]
+        self._base_status = "  |  ".join(p for p in parts if p)
+        if not self.status_var.get().startswith("ERROR"):
+            self.status_var.set(self._base_status)
 
     def drain(self) -> int:
         """Apply every queued message; of a burst of 'live' messages only the newest is rendered."""

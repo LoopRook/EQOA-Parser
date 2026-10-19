@@ -13,6 +13,9 @@ Everything here rests on 2 real captures and is INFERRED unless stated (docs/pro
   * Names (INFERRED, net/names.py): anything that is not the player or pet is named from the NameTable when the
     id is known at the time the Event is created, else ``"0x%08X"``. A name arriving mid-fight leaves two target
     labels (hex, then name) in that fight: accepted MVP limitation.
+  * Group members (docs/CONTRACTS.md "Phase 5", only with PINE on): records whose source or target is a group member
+    who is not a followed connection's player are counted under the member's name (``<Name>'s pet`` for extended
+    records), taken from one feeder connection only. Without PINE nothing changes.
   * ``ability`` is None everywhere (not decoded yet).
   * Several emulators (docs/CONTRACTS.md "Following several emulators"): the router follows every connection by
     default. The primary connection (first to produce an Event) keeps ``you``/``pet``; another connection's player
@@ -36,6 +39,7 @@ from ..events import (
     KIND_HEAL,
     Event,
 )
+from .memory import MemorySnapshot
 from .names import NameTable, OwnNames
 from .protocol import HpChange, Record, Swing
 
@@ -208,7 +212,15 @@ class ConnectionRouter:
     """
 
     def __init__(self, config: Config, log: TextIO | None = None, names: NameTable | None = None,
-                 own_names: OwnNames | None = None) -> None:
+                 own_names: OwnNames | None = None, memory=None) -> None:
+        if memory is not None and names is None:
+            names = NameTable(config.net.server_ip)
+        self.memory = memory  # optional MemoryEnricher (snapshot()); None = PINE off
+        self._mem_version = 0
+        self._snap = MemorySnapshot()
+        self._member_keys: dict[int, str] = {}   # member id -> actor key, fixed at its first Event
+        self._member_first: dict[int, float] = {}
+        self._fallback_feeder: int | None = None
         self.names = names
         self.own_names = own_names
         self._role_order: list[int] = []
@@ -262,6 +274,69 @@ class ConnectionRouter:
                 return a.pet_label()
         return None
 
+    # -- PINE group members ----------------------------------------------------------------------------------
+    def _sync_memory(self) -> None:
+        if self.memory is None:
+            return
+        snap = self.memory.snapshot()
+        if snap.version != self._mem_version:
+            self._mem_version = snap.version
+            self._snap = snap
+            if self.names is not None:
+                self.names.set_memory_names(snap.names())
+
+    def _followed_players(self) -> set[int]:
+        return {a.player_id for a in self._attrs.values() if a.player_id is not None and not a.muted}
+
+    def _feeder(self) -> int | None:
+        own = self._snap.own_id
+        if own is not None:
+            for c, a in self._attrs.items():
+                if a.player_id == own and not a.muted:
+                    return c
+        return self._fallback_feeder
+
+    def _members(self) -> dict[int, str]:
+        """Group members that are not a followed connection's player: id -> current name."""
+        if not self._snap.members:
+            return {}
+        followed = self._followed_players()
+        return {mid: name for mid, name in self._snap.members if mid not in followed}
+
+    def _member_key(self, mid: int, name: str, ts: float) -> str:
+        key = self._member_keys.get(mid)
+        if key is None:
+            taken = set(self._member_keys.values()) | self._labels | {ACTOR_YOU, ACTOR_PET}
+            key, n = name, 1
+            while key in taken:
+                n += 1
+                key = f"{name} ({n})"
+            self._member_keys[mid] = key
+            self._member_first[mid] = ts
+        return key
+
+    def _member_events(self, attr: Attributor, conn: int, record: Record) -> list[Event]:
+        if not isinstance(record, HpChange) or not self._snap.members or record.amount > 0:
+            return []
+        members = self._members()
+        src, tgt = members.get(record.source), members.get(record.target)
+        if src is None and tgt is None:
+            return []
+        feeder = self._feeder()
+        if feeder is None:
+            feeder = self._fallback_feeder = conn
+        if conn != feeder:
+            return []  # the same groupmate fight reaches every emulator in the group: count it once
+        raw = record.raw.hex(" ")
+        amount = -record.amount
+        if src is not None:
+            key = self._member_key(record.source, src, record.ts)
+            actor = f"{key}'s pet" if record.extended else key
+            target = self._member_key(record.target, tgt, record.ts) if tgt is not None else attr._name(record.target)
+            return [Event(record.ts, actor, target, amount, None, KIND_DAMAGE, raw)]
+        key = self._member_key(record.target, tgt, record.ts)
+        return [Event(record.ts, attr._name(record.source), key, amount, None, KIND_DAMAGE_TAKEN, raw)]
+
     def character_groups(self) -> list[CharacterGroup]:
         """Followed connections (those that produced an Event) in first-seen order, primary first.
         Display name: the connection's own-name rule, else the NameTable name of the player id, else ``You``
@@ -272,7 +347,9 @@ class ConnectionRouter:
         used: set[str] = set()
         for conn in order:
             a = self._attrs[conn]
-            name = self.own_names.get(conn) if self.own_names is not None else None
+            name = self.names.memory_name(a.player_id) if self.names is not None and a.player_id is not None else None
+            if name is None and self.own_names is not None:
+                name = self.own_names.get(conn)
             if name is None and a.player_id is not None and self.names is not None:
                 name = self.names.get(a.player_id)
             if name is None:
@@ -283,6 +360,8 @@ class ConnectionRouter:
                 name = f"{base} ({n})"
             used.add(name)
             out.append(CharacterGroup(name, a.player_label(), a.pet_label(), conn, a.player_id, a.first_ts))
+        for mid, key in self._member_keys.items():  # group members, after your own characters
+            out.append(CharacterGroup(key, key, f"{key}'s pet", self._feeder() or 0, mid, self._member_first[mid]))
         return out
 
     def _on_role(self, attr: Attributor, conn: int) -> None:
@@ -304,9 +383,15 @@ class ConnectionRouter:
             attr = self._attrs[conn] = Attributor(self.names, self._claim, self._other_label, self._on_role,
                                                    self._claimed_elsewhere, self._unique_label)
             attr.muted = self.local_port is not None and conn != self.local_port
+        self._sync_memory()
+        before = attr.dropped_unrelated
         events = attr.feed(record)
         if attr.muted:
             return []
+        if not events and attr.dropped_unrelated > before and self._snap.members:
+            events = self._member_events(attr, conn, record)
+            if events:
+                attr.dropped_unrelated = before  # counted as a group member's combat, not as unrelated
         for e in events:
             if e.kind == KIND_DAMAGE:
                 self._own.setdefault(e.actor, None)

@@ -24,12 +24,20 @@ class NameTable:
     def __init__(self, server_ip: str | None = None) -> None:
         self.server_ip = server_ip
         self._names: dict[int, str] = {}
+        self._memory: dict[int, str] = {}  # names read from game memory over PINE: authoritative
 
     def get(self, entity_id: int) -> str | None:
-        return self._names.get(entity_id)
+        return self._memory.get(entity_id) or self._names.get(entity_id)
+
+    def memory_name(self, entity_id: int) -> str | None:
+        return self._memory.get(entity_id)
+
+    def set_memory_names(self, names: dict[int, str]) -> None:
+        """Replace the PINE-sourced names (never overridden by packet-derived ones)."""
+        self._memory = dict(names)
 
     def as_dict(self) -> dict[int, str]:
-        return dict(self._names)
+        return {**self._names, **self._memory}
 
     def feed(self, dgram: UdpDatagram) -> None:
         """Scan one server datagram (other sources are ignored when server_ip is set)."""

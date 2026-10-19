@@ -203,6 +203,9 @@ class ConsoleUI:
     def on_connection(self, text: str) -> None:
         self._print(f"[net] {text}")
 
+    def on_pine(self, text: str) -> None:
+        self._print(f"[net] {text}")
+
     def on_error(self, message: str | None) -> None:
         """Live-source trouble (message) or recovery (None); goes to stderr so stdout stays clean data."""
         self._print(message if message else "source recovered", file=sys.stderr)

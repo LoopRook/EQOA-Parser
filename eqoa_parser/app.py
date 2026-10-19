@@ -12,7 +12,7 @@ from typing import Any, Sequence
 import yaml
 
 from . import pipeline
-from .config import PROJECT_ROOT, Config, load_config
+from .config import PROJECT_ROOT, Config, load_config, validate_config
 from .parser import load_patterns
 from .persistence import RunStore
 from .stats import FightSummary, RunSummary, summarize_run
@@ -60,6 +60,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--connection", type=_port, metavar="PORT",
                    help="limit the meter to the one emulator whose client UDP port is PORT (config net.local_port); "
                         "default: follow every emulator connected to the game server")
+    p.add_argument("--pine", action="store_true",
+                   help="also read group members and names from the game's memory over PINE (read-only; PCSX2 "
+                        "Settings > Advanced > PINE must be on); uses pine.slot")
+    p.add_argument("--pine-slot", type=_port, metavar="N", help="PINE slot to use with --pine (config pine.slot)")
     p.add_argument("--speed", type=_finite_float, metavar="X",
                    help="replay speed multiplier; 0 = as fast as possible (default: 1.0 GUI, 0 with --no-gui)")
     p.add_argument("--no-gui", action="store_true", help="print to stdout instead of opening a window")
@@ -85,6 +89,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             parser.error("--speed only applies to --pcap and --replay")
     if args.idle_timeout is not None and args.idle_timeout <= 0:
         parser.error("--idle-timeout must be > 0")
+    if args.pine_slot is not None and not args.pine:
+        parser.error("--pine-slot needs --pine")
     return args
 
 
@@ -105,7 +111,11 @@ def make_config(args: argparse.Namespace) -> Config:
         cfg.ui.always_on_top = args.always_on_top
     if args.connection is not None:
         cfg.net.local_port = args.connection
-    return cfg
+    if args.pine:
+        cfg.pine.enabled = True
+    if args.pine_slot is not None:
+        cfg.pine.slot = args.pine_slot
+    return validate_config(cfg)
 
 
 class StartupError(Exception):
@@ -121,9 +131,12 @@ def make_source(args: argparse.Namespace, cfg: Config):
         if not Path(args.pcap).is_file():
             raise StartupError(f"capture file not found: {args.pcap}")
         check_pcapng_magic(args.pcap)
+        memory = _make_memory(cfg)
         try:
-            source = PcapReplaySource(args.pcap, cfg, speed=speed)
+            source = PcapReplaySource(args.pcap, cfg, speed=speed, memory=memory)
         except ValueError as exc:  # B's constructor validates the section header
+            if memory is not None:
+                memory.close()
             raise StartupError(f"{args.pcap}: {exc}") from exc
         return source, f"pcap:{args.pcap}"
     if args.live:
@@ -135,7 +148,7 @@ def make_source(args: argparse.Namespace, cfg: Config):
                 pass
         except CaptureError as exc:
             raise StartupError(_with_doc(exc)) from exc
-        return LivePacketSource(cfg), "live:capture"
+        return LivePacketSource(cfg, memory=_make_memory(cfg)), "live:capture"
     if args.live_pine:
         if cfg.buffer.address is None:
             raise StartupError(
@@ -157,6 +170,16 @@ def make_source(args: argparse.Namespace, cfg: Config):
     if not Path(args.replay).is_file():
         raise StartupError(f"replay file not found: {args.replay}")
     return ReplaySource(args.replay, speed=speed), f"replay:{args.replay}"
+
+
+def _make_memory(cfg: Config):
+    """The optional PINE enricher (started), or None when pine.enabled is false. Never raises: an unreachable PINE
+    just shows as "PINE: not reachable" and is retried quietly."""
+    if not cfg.pine.enabled:
+        return None
+    from .net.memory import MemoryEnricher
+
+    return MemoryEnricher(cfg.pine).start()
 
 
 def check_pcapng_magic(path: str | Path) -> None:
@@ -208,6 +231,7 @@ class ErrorWatch:
         self.inner, self.sink = inner, sink
         self._shown: str | None = None
         self._conn: str | None = None
+        self._pine: str | None = None
         self.items = 0  # non-heartbeat items seen (Events)
 
     def __iter__(self):
@@ -218,6 +242,13 @@ class ErrorWatch:
             if conn != self._conn and conn is not None:
                 self._conn = conn
                 self.sink.on_connection(conn)
+            status = getattr(self.inner, "pine_status", None)
+            pine = status() if callable(status) else None
+            if pine != self._pine and pine is not None:
+                self._pine = pine
+                on_pine = getattr(self.sink, "on_pine", None)
+                if callable(on_pine):
+                    on_pine(pine)
             err = getattr(self.inner, "last_error", None)
             text = f"source error: {err}" if err is not None else None
             if text != self._shown:

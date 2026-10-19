@@ -45,6 +45,20 @@ It's a passive tool, but it's still worth checking Sandstorm's rules on third-pa
 The meter follows every copy of PCSX2 talking to the server and gives each character their own rows. If you only want
 one, pass its connection port (shown in the status line): `EQOAParser.exe --connection 20605`.
 
+## Optional: group and names (PINE)
+
+By default the meter only sees your own characters. With PINE on it also reads the group list and character names from
+the emulator's memory (read-only), so groupmates' damage shows up as extra characters with their own rows, and names
+are known straight away.
+
+1. In PCSX2, open Settings → Advanced, turn on PINE, and note the slot number (28011 by default).
+2. Run `EQOAParser.exe --pine` (add `--pine-slot 28012` if your slot isn't the default), or put this in `config.yaml`:
+   `pine: {enabled: true, slot: 28012}`.
+
+The status line shows `PINE: on (slot 28012), group of 2`, or `PINE: not reachable` if PCSX2 isn't answering; the meter
+keeps working either way and retries every few seconds. PCSX2 copies share one settings file, so only one emulator can
+have PINE on at a time. Groupmates on other PCs only show up if that emulator is the one with PINE on.
+
 ## If it shows nothing
 
 Check that PCSX2's network is set to Sockets and that you said yes to the Administrator prompt. If you're on a VPN or
@@ -59,7 +73,7 @@ captures, so some of it is educated guesswork.
 
 - Monsters that were already on screen when the meter started show as IDs instead of names.
 - Spell and ability names aren't decoded yet; they show as "(unknown)".
-- Group members on other people's PCs aren't shown yet, only characters on your own emulators.
+- Group members on other people's PCs only show up with PINE on (see above).
 
 Notes on how the packets were decoded, and which parts are confirmed, are in [docs/protocol-notes.md](docs/protocol-notes.md).
 
@@ -67,8 +81,7 @@ Notes on how the packets were decoded, and which parts are confirmed, are in [do
 
 1. Names for monsters that were already on screen.
 2. Spell and ability names.
-3. Damage from group members on other PCs.
-4. A transparent overlay you can click through.
+3. A transparent overlay you can click through.
 
 ## Running from source
 

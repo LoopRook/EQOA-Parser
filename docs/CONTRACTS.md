@@ -359,3 +359,41 @@ dicts keep working. On top of them:
 - cap2 `--connection 20605`: one group `Zecron` / `Zecron's pet` 675 / `Zecron combined` 675.
 - cap1: one group (the necro was already logged in, so `You`) 7,218.
 - Reloading saved fights keeps their groups and names.
+
+# Phase 5: optional PINE enrichment (main chat, 2026-10-19)
+Group members' damage and names come from game memory over PINE (read-only). With PINE off, the meter behaves exactly as
+before.
+
+## Config / CLI
+- `PineConfig.enabled: bool = False` (slot stays). `--pine` sets `pine.enabled`; `--pine-slot N` sets `pine.slot` (and
+  implies nothing else). Validation as for the other config keys (type bool, slot 1-65535).
+
+## `net/memory.py` (core, read-only)
+- `GameMemory(client)` reads through `PineClient` (no write calls exist, none are added). Addresses are from the
+  MIT-licensed project FrontiersForge (mmvest), verified on SLUS-20744 v1.02 / PCSX2 2.8.2: own name C string at
+  `0x1FBBA10`; cell u32 at `0x4E37F0` (used directly as the base); own id u32 at cell+0x71F4; pet id u32 at cell+0x2BE4C;
+  entity list = 24 u32 pointers at `0x1FB6C30`, record: id u32 +0x0C, name C string +0x58, level u8 +0x70 (0 = empty),
+  class byte +0x256 (0/1 NPC, 2 player, 3 pet); group: in_group u32 cell+0x2BD70, count u32 cell+0x2BE48 (includes self),
+  members at cell+0x2BD78, 0x34 bytes each, id u32 +0x00, name char[24] +0x1C.
+- Methods: `own_name()`, `own_id()`, `pet_id()`, `entities() -> [(id, name, level, kind)]`,
+  `group() -> (in_group, [(id, name)])`. Sanity checks (pointer < 0x2000000, printable names, count 0..8): junk is skipped.
+- `MemoryEnricher(memory_factory, interval=1.0, retry=5.0)`: daemon poller holding a thread-safe `MemorySnapshot`
+  (`version` increments on change; `ok`, `error`, `own_name`, `own_id`, `pet_id`, `entities`, `in_group`, `members`).
+  PINE unreachable or failing: one status, quiet retries every few seconds, never raises, never writes.
+- `status_text()`: `PINE: on (slot N), group of K` / `PINE: off` / `PINE: not reachable`.
+
+## Integration
+- Names: memory names (entities, group members, own) feed the `NameTable` as authoritative entries (a packet-derived
+  name never replaces them). A connection whose player id equals memory's own id is displayed with the memory name.
+- Group members: a record whose source is a group member that is NOT a followed connection's player becomes a `damage`
+  Event with actor = the member's name (extended record: `"<Name>'s pet"`); a record whose target is such a member becomes
+  `damage_taken` with target = the name. Members that ARE followed connections count only from their own connection.
+  Member records are taken from ONE feeder connection (the connection whose player id is memory's own id, else the first
+  connection that delivered member records) so two followed emulators don't both count the same groupmate.
+  Everything else stays dropped as unrelated. Heals of members are not emitted.
+- Members become extra character groups after the followed connections (`character_groups`, `own_actors`), so grouped
+  views, combined totals, run summary and "All characters" include them. A member's key is its name when first seen.
+- UI: status line / console header show the PINE status text; member rows look like the player's own rows.
+
+## Unverified
+Whether the server sends other players' pet damage to a group member's client as extended records is not verified.
