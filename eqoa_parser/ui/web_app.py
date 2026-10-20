@@ -249,6 +249,32 @@ def to_json(msg: Any) -> str:
     return json.dumps(msg, ensure_ascii=True, separators=(",", ":"))
 
 
+def _win32_set_topmost(flag: bool) -> bool:
+    """Set or clear always-on-top for this process's visible top-level windows, asynchronously (never blocks on the
+    window's thread). Returns False if no window was found, so the caller can fall back."""
+    import ctypes
+    import os
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    pid, found = os.getpid(), []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def _each(hwnd, _lparam):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(hwnd):
+            found.append(hwnd)
+        return True
+
+    user32.EnumWindows(_each, 0)
+    hwnd_topmost, hwnd_notopmost = -1, -2
+    flags = 0x0001 | 0x0002 | 0x0010 | 0x4000  # SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS
+    for hwnd in found:
+        user32.SetWindowPos(hwnd, hwnd_topmost if flag else hwnd_notopmost, 0, 0, 0, 0, flags)
+    return bool(found)
+
+
 def coalesce(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep only what the page needs from one pump cycle: every snapshot/closed/finished/test message in order, the
     last status, and the last live fight (dropped if a later closed/finished already ended that fight)."""
@@ -493,7 +519,10 @@ class WebApp:
     def set_topmost(self, flag: bool) -> bool:
         self.layout["topmost"] = flag
         try:
-            self.window.on_top = flag
+            # pywebview's on_top setter, called from a JS-API thread, hangs the window on Windows (reproduced: the
+            # Pin button froze it until Windows closed it). SetWindowPos with SWP_ASYNCWINDOWPOS never waits.
+            if not (sys.platform == "win32" and _win32_set_topmost(flag)):
+                self.window.on_top = flag
         except Exception:
             pass
         self.persist_layout()
