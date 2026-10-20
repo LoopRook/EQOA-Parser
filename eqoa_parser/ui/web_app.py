@@ -7,10 +7,12 @@ Everything up to ``WebApp`` is pure Python (no pywebview import), so it is teste
 """
 from __future__ import annotations
 
+import faulthandler
 import json
 import queue
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -243,8 +245,31 @@ class WebState:
                 "last": self.last, "tests": self.tests, "run": self.run, "status": dict(self.status)}
 
 
-def to_json(msg: dict[str, Any]) -> str:
+def to_json(msg: Any) -> str:
     return json.dumps(msg, ensure_ascii=True, separators=(",", ":"))
+
+
+def coalesce(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep only what the page needs from one pump cycle: every snapshot/closed/finished/test message in order, the
+    last status, and the last live fight (dropped if a later closed/finished already ended that fight)."""
+    out: list[dict[str, Any]] = []
+    last_live: int | None = None
+    last_status: int | None = None
+    for m in msgs:
+        t = m.get("type")
+        if t == "live":
+            if last_live is not None:
+                out[last_live] = None  # type: ignore[call-overload]
+            last_live = len(out)
+        elif t == "status":
+            if last_status is not None:
+                out[last_status] = None  # type: ignore[call-overload]
+            last_status = len(out)
+        elif t in ("closed", "finished", "snapshot") and last_live is not None:
+            out[last_live] = None  # type: ignore[call-overload]
+            last_live = None
+        out.append(m)
+    return [m for m in out if m is not None]
 
 
 # -- window layout persistence ----------------------------------------------------------------------------
@@ -552,8 +577,10 @@ class WebApp:
             record=rec.status_text() if rec is not None else None,
             recording=bool(rec is not None and rec.active))
 
-    def _push(self, msg: dict[str, Any]) -> None:
-        self.window.evaluate_js(f"window.eqoa&&window.eqoa.push({to_json(msg)})")
+    def _push(self, msgs: list[dict[str, Any]]) -> None:
+        """One evaluate_js per pump cycle: evaluate_js blocks until the page has run it, and one call per event in a
+        busy fight froze the window until Windows closed it ("stopped interacting")."""
+        self.window.evaluate_js(f"window.eqoa&&window.eqoa.pushBatch({to_json(msgs)})")
 
     def pump_once(self) -> list[dict[str, Any]]:
         """One pump cycle: drain the sink, fold into the state, return the messages for the page."""
@@ -579,11 +606,39 @@ class WebApp:
             pruned.append(m)
         return pruned[::-1]
 
+    def _debug_log(self):
+        """ui-debug.log next to the saved layout (i.e. next to runs/); opened lazily, kept open for faulthandler."""
+        if getattr(self, "_dbg", None) is None:
+            base = self._layout_path.parent if self._layout_path else Path.cwd()
+            try:
+                self._dbg = open(base / "ui-debug.log", "a", encoding="utf-8")
+            except OSError:
+                self._dbg = False
+        return self._dbg or None
+
+    def _push_watched(self, batch: list[dict[str, Any]]) -> None:
+        """Push with a hang recorder: if the page doesn't take the update within 5 s, dump every thread's stack to
+        ui-debug.log (diagnoses "stopped interacting with Windows" freezes seen live), and log slow pushes."""
+        log = self._debug_log()
+        if log is not None:
+            faulthandler.dump_traceback_later(5.0, repeat=False, file=log)
+        t0 = time.monotonic()
+        try:
+            self._push(batch)
+        finally:
+            if log is not None:
+                faulthandler.cancel_dump_traceback_later()
+                dt = time.monotonic() - t0
+                if dt > 1.0:
+                    log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} slow UI update: {dt:.1f}s for {len(batch)} messages\n")
+                    log.flush()
+
     def _pump(self) -> None:
         while not self._stop.wait(self.refresh_s):
             try:
-                for m in self.pump_once():
-                    self._push(m)
+                batch = coalesce(self.pump_once())
+                if batch:
+                    self._push_watched(batch)
             except Exception as exc:  # a closing window can raise here; the meter must not die loudly
                 if self._stop.is_set():
                     break

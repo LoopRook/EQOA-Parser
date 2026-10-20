@@ -126,7 +126,7 @@ function paneFights() {
   const l = fightList();
   if (!l.length) return '<div class="empty">NO FIGHTS YET · WAITING FOR COMBAT</div>';
   const sel = selectedFight();
-  const rows = l.map((f) => `<tr class="click${f.prev ? ' prev' : ''}${sel && sel.uid === f.uid ? ' sel' : ''}" data-uid="${esc(f.uid)}">
+  const rows = l.slice(0, 200).map((f) => `<tr class="click${f.prev ? ' prev' : ''}${sel && sel.uid === f.uid ? ' sel' : ''}" data-uid="${esc(f.uid)}">
     <td class="m">${f.prev ? esc(f.run_id || 'prev').slice(-6) : 'now'}</td><td class="m">${f.id}</td><td>${esc(f.target || '—')}</td>
     <td class="r">${clock(f.duration)}</td><td class="sub">${charsCell(f)}</td><td>${tagFor(f)}</td></tr>`).join('');
   return table(['RUN', '#', 'TARGET', 'DUR', 'CHARACTERS · DPS (+PET)', ''], rows, 99);
@@ -277,13 +277,21 @@ function setExpanded(on) {
 }
 
 /* ---- messages from Python ---- */
+let renderQueued = false;
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+
 window.eqoa = {
-  push(m) {
+  /* Apply one message to the state; returns true if the layout was switched (which already rendered). */
+  apply(m) {
     switch (m.type) {
       case 'snapshot':
         Object.assign(S, {fights: m.fights, live: m.live, last: m.last, tests: m.tests, run: m.run, status: m.status, settings: m.settings});
         applyTheme(m.settings.theme);
-        if (m.settings.expanded !== UI.expanded) { setExpanded(m.settings.expanded); return; }
+        if (m.settings.expanded !== UI.expanded) { setExpanded(m.settings.expanded); return true; }
         break;
       case 'live': S.live = m.fight; break;
       case 'closed': S.fights.unshift(m.fight); S.live = null; S.last = m.fight; S.run = m.run; break;
@@ -291,8 +299,14 @@ window.eqoa = {
       case 'test': S.tests.unshift(m.result); UI.selTest = 0; break;
       case 'status': S.status = m.status; break;
     }
-    render();
+    return false;
   },
+  /* One call per pump cycle from Python; draw once per animation frame however many messages arrive. */
+  pushBatch(ms) {
+    for (const m of ms) this.apply(m);
+    scheduleRender();
+  },
+  push(m) { this.pushBatch([m]); },
 };
 
 /* ---- controls ---- */

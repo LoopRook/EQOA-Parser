@@ -239,3 +239,21 @@ def test_classic_flag_skips_the_web_ui(monkeypatch, tmp_path):
     assert app.parse_args(["--pcap", "x", "--classic"]).classic is True
     with pytest.raises(SystemExit):
         app.parse_args(["--pcap", "x", "--classic", "--no-gui"])
+
+
+def test_coalesce_keeps_only_the_latest_live_and_status():
+    """Freeze fix: a busy fight queues one 'live' message per hit; only the newest is worth drawing."""
+    from eqoa_parser.ui.web_app import coalesce
+    msgs = [{"type": "live", "fight": {"id": 1, "n": i}} for i in range(50)]
+    msgs += [{"type": "status", "status": {"n": 1}}, {"type": "status", "status": {"n": 2}}]
+    out = coalesce(msgs)
+    assert out == [{"type": "live", "fight": {"id": 1, "n": 49}}, {"type": "status", "status": {"n": 2}}]
+
+
+def test_coalesce_drops_live_superseded_by_closed_and_keeps_order():
+    from eqoa_parser.ui.web_app import coalesce
+    msgs = [{"type": "live", "fight": {"id": 1}}, {"type": "closed", "fight": {"id": 1}, "run": {}},
+            {"type": "test", "result": {}}, {"type": "live", "fight": {"id": 2}}]
+    assert [m["type"] for m in coalesce(msgs)] == ["closed", "test", "live"]
+    assert coalesce(msgs)[-1]["fight"]["id"] == 2
+    assert coalesce([]) == []
