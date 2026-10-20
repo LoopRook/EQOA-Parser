@@ -203,4 +203,6 @@ class Engine:
     def run_summary(self) -> RunSummary:
         """Over this run's closed fights only."""
         with self._lock:
-            return summarize_run(self._closed)
+            fn = getattr(self.source, "progress", None)
+            rows, elapsed = fn() if callable(fn) else ((), 0.0)
+            return summarize_run(self._closed, rows, elapsed)

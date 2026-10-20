@@ -8,12 +8,13 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Sequence
 
-from .events import ACTOR_PET, ACTOR_YOU, KIND_DAMAGE, KIND_DAMAGE_TAKEN
+from .events import ACTOR_PET, ACTOR_YOU, KIND_DAMAGE, KIND_DAMAGE_TAKEN, KIND_HEAL
 from .segmenter import Fight
 
 # DPS uses max(duration, MIN_DPS_DURATION) so zero-duration (single-hit) fights never divide by zero.
 MIN_DPS_DURATION = 1.0
 TOP_ABILITIES = 3
+TOP_SOURCES = 3
 
 
 def effective_duration(duration: float) -> float:
@@ -39,6 +40,31 @@ class ActorStats:
 
 
 @dataclass
+class SourceStats:
+    total: int = 0
+    hits: int = 0
+
+
+@dataclass
+class TakenStats:
+    """Damage taken by one target actor key (a player or pet), with who dealt it."""
+    total: int = 0
+    hits: int = 0
+    max_hit: int = 0
+    sources: dict[str, SourceStats] = field(default_factory=dict)
+
+
+@dataclass
+class HealStats:
+    """Healing by actor key: done (actor of the heal) and received (target of the heal, by source name)."""
+    done: int = 0
+    done_hits: int = 0
+    received: int = 0
+    received_hits: int = 0
+    sources: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
 class FightSummary:
     fight_id: int
     target: str | None          # primary target: most total KIND_DAMAGE received (ties: first hit)
@@ -55,6 +81,8 @@ class FightSummary:
     own_actors: list[str] | None = None  # actor names that counted toward combined_* (None = you + pet rule)
     groups: list[dict[str, Any]] | None = None  # characters: [{"name","player","pet"}] as known at close (None = one "You")
     pet_names: dict[str, str] | None = None     # pet actor key -> pet entity name (PINE only; None = unknown)
+    taken: dict[str, TakenStats] | None = None  # target actor key -> damage taken (None = none / old file)
+    heals: dict[str, HealStats] | None = None   # actor key -> healing done / received (None = none / old file)
 
     def actor(self, name: str) -> ActorStats:
         """Stats for `name`, or an all-zero ActorStats if the actor dealt no damage."""
@@ -70,8 +98,9 @@ class FightSummary:
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        if d["pet_names"] is None:
-            del d["pet_names"]  # additive field: files written without PINE stay as they were
+        for k in ("pet_names", "taken", "heals"):
+            if d[k] is None:
+                del d[k]  # additive fields: files written without them stay as they were
         return d
 
     @classmethod
@@ -82,7 +111,14 @@ class FightSummary:
             a = dict(a)
             abilities = {k: AbilityStats(**v) for k, v in a.pop("abilities").items()}
             actors[name] = ActorStats(abilities=abilities, **a)
-        return cls(actors=actors, **d)
+        taken = d.pop("taken", None)
+        heals = d.pop("heals", None)
+        if taken:
+            taken = {k: TakenStats(v["total"], v["hits"], v["max_hit"],
+                                   {n: SourceStats(**x) for n, x in v["sources"].items()}) for k, v in taken.items()}
+        if heals:
+            heals = {k: HealStats(**v) for k, v in heals.items()}
+        return cls(actors=actors, taken=taken or None, heals=heals or None, **d)
 
 
 DEFAULT_GROUP_NAME = "You"
@@ -105,6 +141,15 @@ class GroupRow:
     combined_dps: float         # combined_total / effective_duration(fight)
     key: str = ""               # stable identity of the character (its player actor key); the name may change
     pet_npc: str | None = None  # the pet entity's name when known (PINE)
+    taken_total: int = 0        # player + pet as targets
+    taken_hits: int = 0
+    taken_max: int = 0
+    dtps: float = 0.0           # taken_total / effective_duration(fight)
+    taken_sources: list[tuple[str, int, int]] = field(default_factory=list)  # (source, total, hits), biggest first
+    heal_done: int = 0          # heals whose actor is the player or pet
+    hps: float = 0.0
+    heal_recv: int = 0          # heals whose target is the player or pet
+    recv_sources: list[tuple[str, int]] = field(default_factory=list)        # (source, total), biggest first
 
     @property
     def pet_name(self) -> str:
@@ -135,8 +180,35 @@ def group_rows(summary: FightSummary) -> list[GroupRow]:
     for g in groups:
         p, q = summary.actor(g["player"]), summary.actor(g["pet"])
         total = p.total + q.total
-        rows.append(GroupRow(g["name"], p, q, total, total / eff, g.get("key") or g["player"],
-                             (summary.pet_names or {}).get(g["pet"])))
+        row = GroupRow(g["name"], p, q, total, total / eff, g.get("key") or g["player"],
+                       (summary.pet_names or {}).get(g["pet"]))
+        keys = (g["player"], g["pet"])
+        src: dict[str, SourceStats] = {}
+        for k in keys:
+            t = (summary.taken or {}).get(k)
+            if t is None:
+                continue
+            row.taken_total += t.total
+            row.taken_hits += t.hits
+            row.taken_max = max(row.taken_max, t.max_hit)
+            for n, x in t.sources.items():
+                c = src.setdefault(n, SourceStats())
+                c.total += x.total
+                c.hits += x.hits
+        row.dtps = row.taken_total / eff
+        row.taken_sources = sorted(((n, x.total, x.hits) for n, x in src.items()), key=lambda r: (-r[1], r[0]))
+        recv: dict[str, int] = {}
+        for k in keys:
+            h = (summary.heals or {}).get(k)
+            if h is None:
+                continue
+            row.heal_done += h.done
+            row.heal_recv += h.received
+            for n, v in h.sources.items():
+                recv[n] = recv.get(n, 0) + v
+        row.hps = row.heal_done / eff
+        row.recv_sources = sorted(recv.items(), key=lambda r: (-r[1], r[0]))
+        rows.append(row)
     return rows
 
 
@@ -183,6 +255,23 @@ def character_runs(summaries: Sequence[FightSummary]) -> list[CharacterRun]:
 
 
 @dataclass
+class CharacterProgress:
+    """Kills and rewards of one character over the run (from system text, net/systext.py)."""
+    key: str
+    name: str
+    kills: int = 0
+    xp: int = 0
+    mastery: int = 0
+    debt: int = 0
+    tunar: int = 0
+    loot: int = 0
+    factions: dict[str, int] = field(default_factory=dict)
+
+    def any(self) -> bool:
+        return bool(self.kills or self.xp or self.mastery or self.debt or self.tunar)
+
+
+@dataclass
 class RunSummary:
     fight_count: int
     total_damage: int           # sum of combined_total over fights
@@ -191,6 +280,8 @@ class RunSummary:
     best_fight_target: str | None
     best_fight_dps: float
     characters: list[CharacterRun] = field(default_factory=list)  # per character, then ALL_CHARACTERS (2+)
+    progress: list[CharacterProgress] = field(default_factory=list)  # kills / XP / tunar per character
+    elapsed: float = 0.0        # seconds of source time the run has covered (the per-hour base for progress)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -208,9 +299,27 @@ def summarize_fight(
     actors: dict[str, ActorStats] = {}
     received: dict[str, int] = {}  # insertion order = first-hit order
     damage_taken = 0
+    taken: dict[str, TakenStats] = {}
+    heals: dict[str, HealStats] = {}
     for e in fight.events:
         if e.kind == KIND_DAMAGE_TAKEN:
             damage_taken += e.amount
+            t = taken.setdefault(e.target or "(unknown)", TakenStats())
+            t.total += e.amount
+            t.hits += 1
+            t.max_hit = max(t.max_hit, e.amount)
+            x = t.sources.setdefault(e.actor, SourceStats())
+            x.total += e.amount
+            x.hits += 1
+            continue
+        if e.kind == KIND_HEAL:
+            d = heals.setdefault(e.actor, HealStats())
+            d.done += e.amount
+            d.done_hits += 1
+            r = heals.setdefault(e.target or "(unknown)", HealStats())
+            r.received += e.amount
+            r.received_hits += 1
+            r.sources[e.actor] = r.sources.get(e.actor, 0) + e.amount
             continue
         if e.kind != KIND_DAMAGE:
             continue
@@ -248,12 +357,14 @@ def summarize_fight(
         own_actors=None if own_actors is None else list(own_actors),
         groups=None if groups is None else [dict(g) for g in groups],
         pet_names=dict(pet_names) if pet_names else None,
+        taken=taken or None, heals=heals or None,
     )
 
 
-def summarize_run(fights: Sequence[FightSummary]) -> RunSummary:
+def summarize_run(fights: Sequence[FightSummary], progress: Sequence[CharacterProgress] = (),
+                  elapsed: float = 0.0) -> RunSummary:
     if not fights:
-        return RunSummary(0, 0, 0.0, None, None, 0.0)
+        return RunSummary(0, 0, 0.0, None, None, 0.0, progress=list(progress), elapsed=elapsed)
     total = sum(f.combined_total for f in fights)
     denom = sum(effective_duration(f.duration) for f in fights)
     best = fights[0]
@@ -263,5 +374,5 @@ def summarize_run(fights: Sequence[FightSummary]) -> RunSummary:
     return RunSummary(
         fight_count=len(fights), total_damage=total, average_dps=total / denom,
         best_fight_id=best.fight_id, best_fight_target=best.target, best_fight_dps=best.combined_dps,
-        characters=character_runs(fights),
+        characters=character_runs(fights), progress=list(progress), elapsed=elapsed,
     )

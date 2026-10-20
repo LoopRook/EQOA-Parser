@@ -14,7 +14,7 @@ import os
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -213,6 +213,15 @@ class RunStore:
     def add_fight(self, summary: FightSummary) -> None:
         self.run["fights"].append(summary.to_dict())
         self.save()
+
+    def set_progress(self, rows, elapsed: float) -> bool:
+        """Keep the run's kills / XP / tunar in the additive ``"progress"`` entry (written by the next save).
+        Returns True if there is anything to keep."""
+        chars = [asdict(r) for r in rows if r.any()]
+        if not chars:
+            return False
+        self.run["progress"] = {"elapsed": round(elapsed, 1), "characters": chars}
+        return True
 
     def add_test(self, result: TestResult) -> None:
         """Append a finished timed test to the current run's additive "tests" list."""

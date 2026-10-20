@@ -38,6 +38,8 @@ class PacketSource:
         self.datagrams = 0          # datagrams offered to the decoder
         self.server_datagrams = 0   # ... that came from net.server_ip
         self.records = 0            # protocol records decoded (after dedupe)
+        self._first_ts: float | None = None   # server datagram times: the run's elapsed time
+        self._last_ts = 0.0
 
     @property
     def has_game_traffic(self) -> bool:
@@ -57,6 +59,11 @@ class PacketSource:
     def character_groups(self) -> list[CharacterGroup]:
         """Followed characters, primary first; display names may change as names arrive (keys never do)."""
         return self.router.character_groups()
+
+    def progress(self):
+        """(kills / XP / tunar per character, seconds of server traffic seen): the run summary's progress part."""
+        el = 0.0 if self._first_ts is None else max(0.0, self._last_ts - self._first_ts)
+        return self.router.progress_rows(), el
 
     def attach_recorder(self, recorder) -> None:
         """Pass every datagram to ``recorder.write`` from now on (any thread, any time). The recorder itself decides
@@ -82,6 +89,9 @@ class PacketSource:
         self.datagrams += 1
         if dgram.src_ip == self.config.net.server_ip:
             self.server_datagrams += 1
+            if self._first_ts is None:
+                self._first_ts = dgram.ts
+            self._last_ts = max(self._last_ts, dgram.ts)
         for rec in self.decoder.feed(dgram):
             self.records += 1
             out.extend(self.router.feed(rec))

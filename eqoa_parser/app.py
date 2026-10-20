@@ -279,8 +279,8 @@ class ErrorWatch:
             fn = own_actors_provider(self.inner)
             if fn is not None:
                 return fn
-        if name == "character_groups":
-            fn = getattr(self.inner, "character_groups", None)
+        if name in ("character_groups", "progress"):
+            fn = getattr(self.inner, name, None)
             if callable(fn):
                 return fn
         raise AttributeError(name)
@@ -325,15 +325,19 @@ class Runtime:
             self.on_test_done(result)
 
     def run_summary(self) -> RunSummary:
-        return summarize_run(self.closed)
+        fn = getattr(self.source, "progress", None)   # kills / XP / tunar of the packet sources
+        rows, elapsed = fn() if callable(fn) else ((), 0.0)
+        return summarize_run(self.closed, rows, elapsed)
 
     def _on_closed(self, summary: FightSummary) -> None:
         self.closed.append(summary)
+        run = self.run_summary()
+        self.store.set_progress(run.progress, run.elapsed)
         try:
             self.store.add_fight(summary)
         except OSError as exc:  # a full disk must not kill the meter
             print(f"warning: could not save fight {summary.fight_id}: {exc}", file=sys.stderr)
-        self.sink.on_closed(summary, self.run_summary())
+        self.sink.on_closed(summary, run)
 
     def _on_finished(self) -> None:
         path = getattr(self.source, "path", None)
@@ -341,7 +345,13 @@ class Runtime:
             # empty/truncated file, or no game-server traffic: say so instead of a silent "No fights."
             self.sink.on_error(f"no game-server combat found in {path} (empty, truncated, or no traffic from "
                                f"{self.cfg.net.server_ip})")
-        self.sink.on_finished(self.run_summary())
+        run = self.run_summary()
+        if self.store.set_progress(run.progress, run.elapsed):  # kills with no fight still belong to the run
+            try:
+                self.store.save()
+            except OSError as exc:
+                print(f"warning: could not save progress: {exc}", file=sys.stderr)
+        self.sink.on_finished(run)
 
 
 def run_console(cfg: Config, source: Any, label: str, test: tuple[str, float] | None = None,

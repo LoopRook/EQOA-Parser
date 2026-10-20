@@ -41,7 +41,9 @@ from ..events import (
 )
 from .memory import MemorySnapshot
 from .names import NameTable, OwnNames, is_character_name
-from .protocol import HpChange, Record, Swing
+from ..stats import CharacterProgress
+from .protocol import HpChange, Record, Swing, SystemText
+from .systext import ProgressTracker, parse_text
 
 PET_WINDOW = 1.0  # seconds between a Swing and the player's extended HpChange at the same target
 _SWING_MEMORY = 64
@@ -236,6 +238,7 @@ class ConnectionRouter:
         self._own: dict[str, None] = {}
         self._announced = False
         self._labels: set[str] = set()
+        self.progress = ProgressTracker()   # system text (kills, XP, tunar), per connection
 
     def attributor(self, conn: int) -> Attributor | None:
         return self._attrs.get(conn)
@@ -370,6 +373,25 @@ class ConnectionRouter:
             out.append(CharacterGroup(key, key, f"{key}'s pet", self._feeder() or 0, mid, self._member_first[mid]))
         return out
 
+    def progress_rows(self) -> list[CharacterProgress]:
+        """Kills / XP / tunar per followed character (own characters in group order, primary first), then any
+        connection that has system text but no combat yet (named by its own-name rule or ``char:<port>``)."""
+        by_port: dict[int, CharacterGroup] = {}
+        for g in self.character_groups():
+            by_port.setdefault(g.port, g)
+        ports = list(by_port) + [c for c in self.progress.by_conn if c not in by_port]
+        out = []
+        for port in ports:
+            t = self.progress.by_conn.get(port)
+            if t is None:
+                continue
+            g = by_port.get(port)
+            key, name = (g.player_key, g.name) if g is not None else (
+                f"char:{port}", (self.own_names.get(port) if self.own_names is not None else None) or f"char:{port}")
+            out.append(CharacterProgress(key, name, t.kills, t.xp, t.mastery, t.debt, t.tunar, t.loot,
+                                         dict(t.factions)))
+        return out
+
     def _pet_npc(self, conn: int, a: Attributor) -> str | None:
         """The pet entity's name from game memory (PINE only), matched by pet id: for the PINE character memory's own
         pet id, else the learned pet id. Remembered per (connection, pet id) because the entity list changes."""
@@ -404,6 +426,11 @@ class ConnectionRouter:
             attr = self._attrs[conn] = Attributor(self.names, self._claim, self._other_label, self._on_role,
                                                    self._claimed_elsewhere, self._unique_label)
             attr.muted = self.local_port is not None and conn != self.local_port
+        if isinstance(record, SystemText):  # progress, not combat: never an Event
+            sys_rec = None if attr.muted else parse_text(record.text)
+            if sys_rec is not None:
+                self.progress.add(conn, sys_rec)
+            return []
         self._sync_memory()
         before = attr.dropped_unrelated
         events = attr.feed(record)

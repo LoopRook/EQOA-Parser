@@ -19,7 +19,7 @@ from typing import Callable, Sequence
 from ..persistence import PastFight
 from ..stats import FightSummary, RunSummary, group_rows
 from ..testmode import TestResult
-from .console import DisplayRow, display_rows, format_abilities, result_rows
+from .console import DisplayRow, display_rows, flow_lines, format_abilities, progress_lines, result_rows
 
 
 class QueueSink:
@@ -254,11 +254,13 @@ class TkApp:
             self.detail_tree.delete(*self.detail_tree.get_children())
             return
         fill_rows(self.detail_tree, display_rows(s, self.show_group))
-        self.detail_var.set(f"Fight {s.fight_id} vs {s.target or '-'} - top abilities: {format_abilities(s)}")
+        self.detail_var.set("\n".join([f"Fight {s.fight_id} vs {s.target or '-'} - top abilities: {format_abilities(s)}",
+                                       *flow_lines(s)]))
 
     def set_run(self, run: RunSummary | None) -> None:
         if run is None or run.fight_count == 0:
-            self.run_var.set("Fights: 0   Total damage: 0   Average DPS: 0.0   Best fight: -")
+            self.run_var.set("\n".join(["Fights: 0   Total damage: 0   Average DPS: 0.0   Best fight: -",
+                                        *(progress_lines(run) if run is not None else [])]))
             return
         best = f"#{run.best_fight_id} {run.best_fight_target or '-'} ({run.best_fight_dps:.1f} dps)"
         lines = [
@@ -268,6 +270,7 @@ class TkApp:
         for c in run.characters:
             fight = f"best #{c.best_fight_id} ({c.best_dps:.1f})" if c.best_fight_id is not None else "-"
             lines.append(f"{c.name}: {c.total} dmg  {c.dps:.1f} dps  {fight}")
+        lines += progress_lines(run)
         self.run_var.set("\n".join(lines))
 
     def apply(self, msg: tuple) -> None:

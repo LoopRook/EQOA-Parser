@@ -491,3 +491,45 @@ letters, 3..15 characters (an apostrophe or hyphen may join a further capitalise
 rule. The NameTable now only stores names that start with a capital letter or an article (`a `, `an `, `the `, any
 case), so lowercase junk cannot become any entity's name. PINE names are authoritative and unchanged. Both name oracles
 (`expected_names.json`, the own-name sample) are unchanged.
+
+# Phase 8: damage taken, healing, kills/XP
+
+## Damage taken and healing (`stats.py`, additive)
+- `FightSummary.taken: {target_key: TakenStats(total, hits, max_hit, sources: {source: SourceStats(total, hits)})} | None`
+  and `FightSummary.heals: {actor_key: HealStats(done, done_hits, received, received_hits, sources: {source: total})} | None`.
+  Built from `damage_taken` and `heal` Events already in the fight; `None` when empty and then omitted from `to_dict()`;
+  absent on load = `None` (old files unchanged). Heals still never start or extend a fight.
+- `GroupRow` adds, merged over the character's player + pet keys: `taken_total/hits/max`, `dtps` (over
+  `effective_duration`), `taken_sources` ((source, total, hits), biggest first), `heal_done`, `hps`, `heal_recv`,
+  `recv_sources`. A heal is "done" by its actor (player or pet) to anyone and "received" by its target.
+- Attribution already emits a `heal` Event for every HpChange with a positive amount whose source or target is a followed
+  player or pet (nothing is dropped); source/target are named like damage. cap2: the bard takes 56 x 21 = 1,176 from the
+  dummy and receives 56 x 300 = 16,800 healing (the HoT is credited to the dummy as source).
+
+## System text (`net/systext.py`, core, stdlib only)
+- Message opcode `0x0A7A`: `7a 0a <n u32 LE> <n UTF-16LE code units>`, body exactly `6 + 2n` bytes (CONFIRMED on all 226
+  messages of a 9-minute capture). `protocol.SystemText(ts, conn, header_low16, seq, text, raw)` joins `Record`; the same
+  per-connection (seq, body) dedupe applies, so a server re-send is not counted twice.
+- `parse_text` returns `XpGain(xp, debt_paid, debt_left)`, `MasteryXp`, `Tunar` (`You receive N tunar[, ...].`; the bank
+  line `... in bank.` is not tunar earned), `Faction(name, standing, delta)`, `Loot(looter, item)`, else None. Unparsed
+  text is dropped; text is never stored or logged.
+- **Kill = one `You receive N XP` message.** It is the only member of the kill marker group (0x0020 / 0x00D9 / 0x0052) that
+  carries meaning and the one already decoded; on the 9-minute capture it gave 20 kills per character, matching the 0x00D9 markers once one re-sent datagram
+  (21 raw) is dropped, whereas
+  0x0052 was missing at 2 of 21 kills and 0x0020 is a constant. Kills of mobs you did not help kill still count (group XP).
+- `ProgressTracker.by_conn: {port: Totals(kills, xp, mastery, debt, tunar, loot, factions)}` lives in the
+  `ConnectionRouter` (`progress`); muted connections (explicit `--connection`) are ignored. `router.progress_rows()` maps
+  ports to characters (`CharacterGroup`, else `char:<port>`) as `stats.CharacterProgress(key, name, kills, xp, mastery,
+  debt, tunar, loot, factions)`. `PacketSource.progress()` returns (rows, elapsed), elapsed = first to last server datagram.
+- `RunSummary.progress` and `RunSummary.elapsed` (additive; `summarize_run(fights, progress, elapsed)`); per hour =
+  value x 3600 / elapsed. `Engine.run_summary()` asks `source.progress()` when it exists. A run with progress but no fights
+  still reports it.
+
+## Persistence and views
+- `runs/<date>.json`, schema 1: a run may carry `"progress": {"elapsed", "characters": [CharacterProgress]}` (only when a
+  character has kills/XP/tunar), written by `RunStore.set_progress` + the next save (every closed fight and at finish).
+- Console and window share `ui/console.py`: `flow_lines(summary)` -> `Taken: X (DTPS Y), biggest hit M, top: A n, B m` and
+  `Healing: done X (HPS Y), received Z from A n`, per character (name prefix with 2+), printed under a fight's
+  `(damage taken ...)` line and in the window's detail area under the fight list. `progress_lines(run)` ->
+  `Kills K (k/h), XP x (xp/h), mastery m (m/h), tunar t (t/h)[, debt paid d]`, printed in the run summary and in the window's
+  "This run" box. No columns or width were added.

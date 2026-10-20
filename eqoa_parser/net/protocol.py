@@ -15,6 +15,7 @@ Opcodes:
       credited to its owner; all 36 pet records in cap2 were extended, none of 69 player records were).
   0x00B1 Swing     ``b1 00 <attacker u32> <target u32> <extra i32> <tail>`` (INFERRED: NPC/pet melee swing
       start; the player's own melee has no swing record).
+  0x0A7A SystemText ``7a 0a <n u32> <n UTF-16LE units>`` (CONFIRMED; net/systext.py)
   0x00CD CastBar   own character's cast bar (INFERRED); recognised but not decoded into a record.
 Server re-sends are dropped per connection (client port) on (seq, body).
 """
@@ -25,6 +26,7 @@ from dataclasses import dataclass
 from typing import Union
 
 from .pcapng import UdpDatagram
+from .systext import OP_SYSTEXT, decode_text
 
 OP_HPCHANGE = 0x00DB
 OP_SWING = 0x00B1
@@ -58,7 +60,18 @@ class Swing:
     raw: bytes
 
 
-Record = Union[HpChange, Swing]
+@dataclass(frozen=True)
+class SystemText:
+    """Opcode 0x0A7A: a system message for the connection's character (net/systext.py)."""
+    ts: float
+    conn: int
+    header_low16: int
+    seq: int
+    text: str
+    raw: bytes
+
+
+Record = Union[HpChange, Swing, SystemText]
 
 
 def read_varint(buf: bytes, pos: int, end: int) -> tuple[int, int] | None:
@@ -96,6 +109,9 @@ def _decode_body(body: bytes, ts: float, conn: int, h16: int, seq: int) -> Recor
             return None
         attacker, target, extra = struct.unpack_from("<IIi", body, 2)
         return Swing(ts, conn, h16, seq, attacker, target, extra, body)
+    if op == OP_SYSTEXT:
+        text = decode_text(body)
+        return None if text is None else SystemText(ts, conn, h16, seq, text, body)
     return None
 
 

@@ -12,7 +12,8 @@ from typing import Callable, Sequence, TextIO
 
 from ..events import ACTOR_PET, ACTOR_YOU
 from ..testmode import TestResult
-from ..stats import ALL_CHARACTERS, ActorStats, FightSummary, RunSummary, effective_duration, group_rows, pet_name
+from ..stats import (ALL_CHARACTERS, TOP_SOURCES, ActorStats, CharacterProgress, FightSummary, RunSummary,
+                     effective_duration, group_rows, pet_name)
 
 
 def _label(summary: FightSummary) -> str:
@@ -43,6 +44,44 @@ def format_abilities(summary: FightSummary) -> str:
         return "-"
     names = actor_names(summary)
     return ", ".join(f"{t['ability']} ({names.get(t['actor'], t['actor'])}) {t['total']}" for t in summary.top_abilities)
+
+
+def flow_lines(summary: FightSummary) -> list[str]:
+    """Per character: damage taken (DTPS, biggest hit, top sources) and healing (done/HPS, received), when nonzero.
+    The name prefixes the line only with 2+ characters."""
+    rows = group_rows(summary)
+    out: list[str] = []
+    for g in rows:
+        pre = f"{g.name}: " if len(rows) >= 2 else ""
+        if g.taken_total:
+            top = ", ".join(f"{n} {t}" for n, t, _ in g.taken_sources[:TOP_SOURCES])
+            out.append(f"{pre}Taken: {g.taken_total} (DTPS {g.dtps:.1f}), biggest hit {g.taken_max}, top: {top}")
+        if g.heal_done or g.heal_recv:
+            line = f"{pre}Healing: done {g.heal_done} (HPS {g.hps:.1f}), received {g.heal_recv}"
+            if g.recv_sources:
+                line += " from " + ", ".join(f"{n} {t}" for n, t in g.recv_sources[:TOP_SOURCES])
+            out.append(line)
+    return out
+
+
+def progress_text(p: CharacterProgress, elapsed: float) -> str:
+    """``Kills 21 (88/h), mastery 3,491,313 (14,750/h), tunar 247 (1,045/h)``: only what is nonzero; the per-hour
+    figures use the run's elapsed time."""
+    def part(label: str, v: int) -> str:
+        return f"{label} {v:,}" + (f" ({v * 3600 / elapsed:,.0f}/h)" if elapsed > 0 else "")
+    parts = [part("Kills", p.kills)]
+    for label, v in (("XP", p.xp), ("mastery", p.mastery), ("tunar", p.tunar)):
+        if v:
+            parts.append(part(label, v))
+    if p.debt:
+        parts.append(f"debt paid {p.debt:,}")
+    return ", ".join(parts)
+
+
+def progress_lines(run: RunSummary) -> list[str]:
+    """One line per character with progress; the name leads only with 2+ characters."""
+    shown = [p for p in run.progress if p.any()]
+    return [(f"{p.name}: " if len(shown) >= 2 else "") + progress_text(p, run.elapsed) for p in shown]
 
 
 @dataclass
@@ -156,6 +195,7 @@ def format_fight(summary: FightSummary, show_group: bool = False, own: Sequence[
     lines += [_row_line(r, width) for r in rows]
     lines += [
         f"  (damage taken {summary.damage_taken})",
+        *[f"  {t}" for t in flow_lines(summary)],
         f"  Top abilities: {format_abilities(summary)}",
     ]
     return "\n".join(lines)
@@ -163,7 +203,7 @@ def format_fight(summary: FightSummary, show_group: bool = False, own: Sequence[
 
 def format_run(run: RunSummary) -> str:
     if run.fight_count == 0:
-        return "=== Run summary ===\n  No fights."
+        return "\n".join(["=== Run summary ===", "  No fights.", *[f"  {t}" for t in progress_lines(run)]])
     best = (
         f"fight {run.best_fight_id} vs {run.best_fight_target or '(no target)'} at {run.best_fight_dps:.1f} dps"
         if run.best_fight_id is not None
@@ -181,6 +221,7 @@ def format_run(run: RunSummary) -> str:
     for c in chars:
         fight = f"fight {c.best_fight_id} ({c.best_dps:.1f} dps)" if c.best_fight_id is not None else "-"
         lines.append(f"  {c.name:<{width}} total {c.total:>6}  dps {c.dps:>7.1f}  best fight {fight}")
+    lines += [f"  {t}" for t in progress_lines(run)]
     return "\n".join(lines)
 
 
