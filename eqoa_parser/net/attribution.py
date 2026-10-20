@@ -195,12 +195,18 @@ class Attributor:
                           KIND_HEAL, raw)]
         amount = -record.amount
         player = self.player_id
+        # Target first: a hit on your own character or pet is damage TAKEN even when you caused it (self-damage,
+        # e.g. HP-cost spells), so it never counts as DPS.
+        if record.target == player or (self.pet_id is not None and record.target == self.pet_id):
+            tgt = self.player_label() if record.target == player else self.pet_label()
+            if record.source == player:
+                src = self.pet_label() if record.extended else self.player_label()
+            else:
+                src = self._name(record.source)
+            return [Event(record.ts, src, tgt, amount, None, KIND_DAMAGE_TAKEN, raw)]
         if record.source == player:
             actor = self.pet_label() if record.extended else self.player_label()
             return [Event(record.ts, actor, self._name(record.target), amount, None, KIND_DAMAGE, raw)]
-        if record.target == player or (self.pet_id is not None and record.target == self.pet_id):
-            tgt = self.player_label() if record.target == player else self.pet_label()
-            return [Event(record.ts, self._name(record.source), tgt, amount, None, KIND_DAMAGE_TAKEN, raw)]
         # source is the learned pet (not expected: pet damage is credited to the owner), or a non-player source
         # hitting the pet's owner's other entity: dropped like any unrelated record.
         self.dropped_unrelated += 1

@@ -250,3 +250,24 @@ def test_cap2_default_follows_both_connections(tmp_path):
     assert list(f2.actors) == ["Zecron's pet"] and f2.actor("Zecron's pet").total == 675 and f2.actor("Zecron's pet").hits == 36
     assert f2.you.total == 0 and f2.combined_total == 675
     assert src.own_actors() == ["you", "Zecron's pet"] and src.router.selected == 21173
+
+
+def test_self_damage_is_damage_taken_not_dps():
+    """User report: damage you do to yourself (e.g. HP-cost spells) was counted as DPS."""
+    a = Attributor()
+    a.feed(hp(1.0, P, -100, D))                      # learn the player with a normal hit
+    (e,) = a.feed(hp(2.0, P, -50, P))                # you damage yourself
+    assert (e.actor, e.target, e.amount, e.kind) == ("you", "you", 50, "damage_taken")
+
+
+def test_self_damage_counts_in_taken_not_in_damage_done(tmp_path):
+    from eqoa_parser.segmenter import Segmenter
+    from eqoa_parser.stats import summarize_fight
+    a, seg = Attributor(), Segmenter(8.0)
+    for r in (hp(1.0, P, -100, D), hp(2.0, P, -50, P), hp(3.0, D, -20, P)):
+        for ev in a.feed(r):
+            seg.feed(ev)
+    (fight,) = seg.flush()
+    s = summarize_fight(fight)
+    assert s.you.total == 100 and s.combined_total == 100
+    assert s.damage_taken == 70
