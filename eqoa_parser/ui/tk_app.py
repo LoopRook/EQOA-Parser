@@ -85,16 +85,21 @@ def fill_rows(tree: ttk.Treeview, rows: Sequence[DisplayRow]) -> None:
     for r in rows:
         text = ("    " + r.label) if r.kind == "pet" else r.label
         tree.insert("", "end", text=text, tags=(r.kind,),
-                    values=(r.total, f"{r.dps:.1f}", "" if r.max_hit is None else r.max_hit))
+                    values=(r.total, f"{r.dps:.1f}", "" if r.max_hit is None else r.max_hit)
+                    + ((r.taken, r.healed) if "taken" in tree["columns"] else ()))
 
 
-def make_breakdown_tree(parent: tk.Misc, height: int) -> ttk.Treeview:
-    tree = ttk.Treeview(parent, columns=("total", "dps", "max"), height=height, selectmode="none")
+def make_breakdown_tree(parent: tk.Misc, height: int, extra: bool = False) -> ttk.Treeview:
+    """`extra` adds the Taken / Healed columns (the Current fight table)."""
+    cols = ("total", "dps", "max") + (("taken", "healed") if extra else ())
+    tree = ttk.Treeview(parent, columns=cols, height=height, selectmode="none")
     tree.heading("#0", text="Character")
-    tree.column("#0", width=170, anchor="w")
-    for col, text in (("total", "Total"), ("dps", "DPS"), ("max", "Max hit")):
+    tree.column("#0", width=150, anchor="w")
+    for col, text in (("total", "Total"), ("dps", "DPS"), ("max", "Max hit"), ("taken", "Taken"), ("healed", "Healed")):
+        if col not in cols:
+            continue
         tree.heading(col, text=text)
-        tree.column(col, width=70, anchor="e")
+        tree.column(col, width=85 if col in ("taken", "healed") else 60, anchor="e")
     bold = ("TkDefaultFont", 9, "bold")
     tree.tag_configure("combined", font=bold, background="#eef2f7")
     tree.tag_configure("all", font=bold, background="#dde6f0")
@@ -131,7 +136,7 @@ class TkApp:
 
         self.root = root or tk.Tk()
         self.root.title("EQOA Parser")
-        self.root.geometry("500x960")
+        self.root.geometry("600x960")
         self.root.minsize(420, 420)
         self.top_var = tk.BooleanVar(master=self.root, value=always_on_top)
         self._apply_topmost()
@@ -170,7 +175,7 @@ class TkApp:
         live.pack(fill="x", pady=(6, 0))
         self.live_head = tk.StringVar(master=self.root)
         ttk.Label(live, textvariable=self.live_head).pack(anchor="w")
-        self.live_tree = make_breakdown_tree(live, height=5)
+        self.live_tree = make_breakdown_tree(live, height=5, extra=True)
         if True:  # many rows (several characters, group actors): scroll instead of growing
             lsb = ttk.Scrollbar(live, orient="vertical", command=self.live_tree.yview)
             self.live_tree.configure(yscrollcommand=lsb.set)

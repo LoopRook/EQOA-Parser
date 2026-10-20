@@ -198,3 +198,27 @@ def test_test_button_dialog_countdown_and_results(app_factory):
     app.test_clicked()
     app.test_clicked()                                   # second click while active = cancel
     assert api.cancelled == 1 and app.test_button.cget("text") == "Test"
+
+
+def _fight_with_taken_and_heals():
+    from eqoa_parser.stats import HealStats, TakenStats
+    f = make_fight(1, target="a rat", duration=10.0)
+    f.taken = {"you": TakenStats(total=40, hits=2, max_hit=25), "pet": TakenStats(total=10, hits=1, max_hit=10)}
+    f.heals = {"you": HealStats(done=30), "pet": HealStats(done=0)}
+    return f
+
+
+def test_display_rows_taken_and_healed():
+    from eqoa_parser.ui.console import display_rows
+    rows_ = display_rows(_fight_with_taken_and_heals())
+    assert [(r.taken, r.healed) for r in rows_] == [("40", "30"), ("10", "0"), ("50 (5.0)", "30 (3.0)")]
+
+
+def test_live_tree_has_taken_and_healed_columns(app_factory):
+    app = app_factory()
+    app.sink.on_live(_fight_with_taken_and_heals())
+    app.drain()
+    assert list(app.live_tree["columns"])[-2:] == ["taken", "healed"]
+    vals = [app.live_tree.item(i, "values") for i in app.live_tree.get_children()]
+    assert [tuple(map(str, v[3:])) for v in vals] == [("40", "30"), ("10", "0"), ("50 (5.0)", "30 (3.0)")]
+    assert list(app.detail_tree["columns"]) == ["total", "dps", "max"]   # other tables unchanged

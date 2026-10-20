@@ -13,7 +13,7 @@ from typing import Callable, Sequence, TextIO
 from ..events import ACTOR_PET, ACTOR_YOU
 from ..testmode import TestResult
 from ..stats import (ALL_CHARACTERS, TOP_SOURCES, ActorStats, CharacterProgress, FightSummary, RunSummary,
-                     effective_duration, group_rows, pet_name)
+                     HealStats, TakenStats, effective_duration, group_rows, pet_name)
 
 
 def _label(summary: FightSummary) -> str:
@@ -91,6 +91,11 @@ class DisplayRow:
     total: int
     dps: float
     max_hit: int | None = None      # None for combined / all rows
+    taken: str = ""                 # damage taken ("total", or "total (DTPS)" on combined / all rows)
+    healed: str = ""                # healing done ("total", or "total (HPS)" on combined / all rows)
+
+
+_NO_TAKEN, _NO_HEAL = TakenStats(), HealStats()
 
 
 def display_rows(summary: FightSummary, show_group: bool = False) -> list[DisplayRow]:
@@ -98,13 +103,20 @@ def display_rows(summary: FightSummary, show_group: bool = False) -> list[Displa
     `Name combined`; with 2+ characters a final `All characters`; with show_group the remaining actors."""
     groups = group_rows(summary)
     rows: list[DisplayRow] = []
+    taken = lambda a: str(((summary.taken or {}).get(a.actor) or _NO_TAKEN).total)
+    healed = lambda a: str(((summary.heals or {}).get(a.actor) or _NO_HEAL).done)
     for g in groups:
-        rows.append(DisplayRow(g.name, "player", g.player.total, g.player.dps, g.player.max_hit))
-        rows.append(DisplayRow(g.pet_name, "pet", g.pet.total, g.pet.dps, g.pet.max_hit))
-        rows.append(DisplayRow(f"{g.name} combined", "combined", g.combined_total, g.combined_dps))
+        rows.append(DisplayRow(g.name, "player", g.player.total, g.player.dps, g.player.max_hit,
+                               taken(g.player), healed(g.player)))
+        rows.append(DisplayRow(g.pet_name, "pet", g.pet.total, g.pet.dps, g.pet.max_hit, taken(g.pet), healed(g.pet)))
+        rows.append(DisplayRow(f"{g.name} combined", "combined", g.combined_total, g.combined_dps, None,
+                               f"{g.taken_total} ({g.dtps:.1f})", f"{g.heal_done} ({g.hps:.1f})"))
     if len(groups) >= 2:
         total = sum(g.combined_total for g in groups)
-        rows.append(DisplayRow(ALL_CHARACTERS, "all", total, total / effective_duration(summary.duration)))
+        eff = effective_duration(summary.duration)
+        tk, hl = sum(g.taken_total for g in groups), sum(g.heal_done for g in groups)
+        rows.append(DisplayRow(ALL_CHARACTERS, "all", total, total / eff, None,
+                               f"{tk} ({tk / eff:.1f})", f"{hl} ({hl / eff:.1f})"))
     if show_group:
         known = {g.player.actor for g in groups} | {g.pet.actor for g in groups}
         rest = [a for n, a in summary.actors.items() if n not in known]
