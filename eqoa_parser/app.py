@@ -77,6 +77,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--test", type=_finite_float, metavar="SECONDS",
                    help="with --no-gui: run one timed test: the clock starts at your first damage and the DPS is total / SECONDS")
     p.add_argument("--test-label", metavar="TEXT", help="name of the --test run (default: test)")
+    p.add_argument("--classic", action="store_true",
+                   help="use the classic Tk window instead of the web UI (also the automatic fallback when pywebview "
+                        "or the WebView2 runtime is unavailable)")
     p.add_argument("--always-on-top", action=argparse.BooleanOptionalAction, default=None,
                    help="keep the window above others (default: config ui.always_on_top)")
     return p
@@ -102,6 +105,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error("--test must be > 0")
     if args.test is not None and not args.no_gui:
         parser.error("--test needs --no-gui (the window has a Test button)")
+    if args.classic and args.no_gui:
+        parser.error("--classic and --no-gui cannot be combined")
     if args.test_label is not None and args.test is None:
         parser.error("--test-label needs --test")
     if args.pine_slot is not None and not args.pine:
@@ -398,7 +403,16 @@ def make_recording(cfg: Config, source: Any, args: argparse.Namespace | None = N
     return rec
 
 
-def run_gui(cfg: Config, source: Any, label: str, app_factory=None, recording=None) -> int:
+def web_factory(cfg: Config):
+    """A WebApp factory for run_gui, or raises WebUnavailable (nothing has started yet) so the caller can fall back."""
+    import functools
+
+    from .ui.web_app import WebApp
+
+    return functools.partial(WebApp, layout_path=Path(cfg.runs_dir).parent / "ui-state.json")
+
+
+def run_gui(cfg: Config, source: Any, label: str, app_factory=None, recording=None, classic: bool = False) -> int:
     from .ui.tk_app import TkApp
 
     store = RunStore(cfg.runs_dir, label)
@@ -415,8 +429,15 @@ def run_gui(cfg: Config, source: Any, label: str, app_factory=None, recording=No
         for t in thread_ref:
             t.join(timeout=3.0)
 
-    factory = app_factory or TkApp
-    window = factory(
+    from .ui.web_app import WebUnavailable
+
+    window = None
+    if app_factory is None and not classic:
+        try:
+            app_factory = web_factory(cfg)
+        except Exception as exc:  # pywebview not installed / not importable
+            print(f"warning: web UI unavailable ({type(exc).__name__}: {exc}); using the classic window", file=sys.stderr)
+    kw = dict(
         show_group=cfg.show_group,
         always_on_top=cfg.ui.always_on_top,
         refresh_ms=cfg.ui.refresh_ms,
@@ -424,6 +445,13 @@ def run_gui(cfg: Config, source: Any, label: str, app_factory=None, recording=No
         source_label=f"{label}  run {store.run_id}",
         on_close=shutdown,
     )
+    if app_factory is not None:
+        try:
+            window = app_factory(**kw)
+        except WebUnavailable as exc:
+            print(f"warning: web UI unavailable ({exc}); using the classic window", file=sys.stderr)
+    if window is None:
+        window = TkApp(**kw)
     rt = Runtime(cfg, source, store, window.sink)
     if hasattr(window, "set_tests"):
         window.set_tests(rt, store.previous_tests)
@@ -476,8 +504,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             test = None if args.test is None else (args.test_label or "test", args.test)
             return run_console(cfg, source, label, test, stop_after_test=bool(args.live))
         if recording is None:
-            return run_gui(cfg, source, label)
-        return run_gui(cfg, source, label, recording=recording)
+            return run_gui(cfg, source, label, classic=args.classic)
+        return run_gui(cfg, source, label, recording=recording, classic=args.classic)
     except PineError as exc:
         return _fail(f"emulator connection failed: {exc}")
     except CaptureError as exc:

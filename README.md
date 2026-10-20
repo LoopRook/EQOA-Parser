@@ -26,7 +26,7 @@ Below that is a list of past fights showing the target, how long it lasted, and 
 to see its full breakdown and top hits. The run summary at the top gives each character's total, DPS and best fight.
 
 Fights are saved to `runs/<date>.json` next to the program and load back in if you restart it the same day. The window
-stays on top of other windows by default. There's also a console mode (`--no-gui`).
+stays on top of other windows by default. There's also a console mode (`--no-gui`). The window is an HTML/CSS page shown with [pywebview](https://pywebview.flowrl.com/) (needs the WebView2 runtime that ships with Windows 11; fonts are bundled, no internet needed). If that isn't available it falls back to the older Tk window, which you can also ask for with `--classic`. The window position is remembered in `ui-state.json` next to `runs/`.
 
 Start the meter before you log in or zone if you can. Names for characters and monsters come from data the server sends
 when they first appear, so anything already on screen when the meter starts shows up as an ID like `0x01312F0A` until it

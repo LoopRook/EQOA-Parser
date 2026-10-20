@@ -5,6 +5,9 @@ requires-python = ">=3.11"
 license = { text = "GPL-3.0-only" }
 dependencies = ["PyYAML>=6.0"]
 
+[project.optional-dependencies]
+gui = ["pywebview>=5.0"]   # the default window; without it the classic Tk window is used
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"

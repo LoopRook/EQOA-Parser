@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EQOA Parser</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="compact">
+<div class="win" id="win">
+  <!-- compact meter -->
+  <section id="compact">
+    <div class="bar drag pywebview-drag-region">
+      <span class="lbl" id="cLabel"><i class="dot" id="cDot"></i>IDLE</span>
+      <span class="lbl" id="cTimer"></span>
+      <span class="ctl">
+        <button class="btn sm" id="cPin" title="Always on top">[^]</button>
+        <button class="btn sm" id="cMin" title="Minimise">[_]</button>
+        <button class="btn sm" id="cClose" title="Close">[X]</button>
+      </span>
+    </div>
+    <div class="bar" style="border-bottom:0;padding-bottom:0">
+      <div class="seg" id="modeC"></div>
+      <button class="btn" id="expand" title="Expand">[ + ]</button>
+    </div>
+    <div class="hero"><span class="n" id="heroC">0</span><span class="u" id="heroU">DPS · COMBINED</span></div>
+    <div class="idle" id="idleNote"></div>
+    <div id="emus"></div>
+    <div class="foot" id="cFoot"></div>
+    <div class="errline hidden" id="cErr"></div>
+  </section>
+
+  <!-- expanded view -->
+  <section id="expanded" class="hidden" style="display:flex;flex-direction:column;height:100%">
+    <div class="bar drag pywebview-drag-region">
+      <span class="lbl" id="xLabel"><i class="dot" id="xDot"></i>EQOA PARSER</span>
+      <span class="ctl">
+        <button class="btn" id="xTheme" title="Light / dark">[ DARK ]</button>
+        <button class="btn" id="xPin" title="Always on top">[ PIN ]</button>
+        <button class="btn" id="collapse" title="Compact view">[ - ]</button>
+        <button class="btn" id="xMin" title="Minimise">[ _ ]</button>
+        <button class="btn" id="xClose" title="Close">[ X ]</button>
+      </span>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <div class="pane" id="pane"></div>
+    <div class="statusbar" id="statusbar"></div>
+  </section>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -3,15 +3,17 @@
 # Build-time only; the app itself does not depend on PyInstaller.
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 root = Path(SPECPATH).parent
 
 a = Analysis(
     [str(root / "packaging" / "entry.py")],
     pathex=[str(root)],
-    datas=[(str(root / "patterns.yaml"), "."), (str(root / "config.yaml"), ".")],  # bundled defaults
-    hiddenimports=collect_submodules("eqoa_parser"),
+    datas=[(str(root / "patterns.yaml"), "."), (str(root / "config.yaml"), ".")]  # bundled defaults
+    + [(str(root / "eqoa_parser" / "ui" / "web"), "eqoa_parser/ui/web")]  # web UI: html/css/js + fonts
+    + collect_data_files("webview"),  # pywebview js + the WebView2 loader DLLs
+    hiddenimports=collect_submodules("eqoa_parser") + collect_submodules("webview"),
     excludes=["pytest", "unittest.mock"],
     noarchive=False,
 )

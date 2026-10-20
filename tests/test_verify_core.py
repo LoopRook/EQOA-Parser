@@ -838,14 +838,14 @@ def test_core_module_static_imports_have_no_ui(mod):
 def test_requirements_minimal_and_complete():
     reqs = [ln.split("#")[0].strip() for ln in (ROOT / "requirements.txt").read_text().splitlines()]
     names = {re.split(r"[<>=!~\[ ]", r)[0].lower() for r in reqs if r}
-    assert names == {"pyyaml", "pytest"}
+    assert names == {"pyyaml", "pywebview", "pytest"}
     third = set()
     for p in list((ROOT / "eqoa_parser").rglob("*.py")):
         for name, level in _imports(p):
             top = name.split(".")[0]
             if level == 0 and top and top not in sys.stdlib_module_names and top != "eqoa_parser":
                 third.add(top)
-    assert third == {"yaml"}, third
+    assert third == {"yaml", "webview"}, third   # webview: the optional web UI (lazy import, Tk fallback)
     pyproj = (ROOT / "pyproject.toml").read_text()
     assert 'dependencies = ["PyYAML>=6.0"]' in pyproj
 

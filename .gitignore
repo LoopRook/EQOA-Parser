@@ -7,3 +7,4 @@ captures/
 dist/
 build/
 prerelease/
+ui-state.json

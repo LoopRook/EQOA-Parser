@@ -1,5 +1,7 @@
 # Runtime
 PyYAML>=6.0
+# Web UI (default window; falls back to the classic Tk window if missing). Uses the system WebView2 runtime on Windows.
+pywebview>=5.0
 # Tests
 pytest>=8.0
 # Tkinter ships with CPython (on some Linux distros: install the python3-tk package).
