@@ -1,10 +1,13 @@
 # EQOA Parser
 
-A damage meter for EverQuest Online Adventures on PCSX2, for players on the Sandstorm server. It shows how much damage
-you and your pet do in each fight, works with two emulators running at once, and has a timed test mode for comparing
-pets or gear on a dummy. With PINE turned on it can also show your group's damage.
+A damage meter for EverQuest Online Adventures on PCSX2, for players on the Sandstorm server. It shows the damage,
+healing and damage taken of you and your pet in each fight, tracks kills, XP and tunar per hour, works with two emulators
+running at once, and has a timed test mode for comparing pets or gear on a dummy.
 
-![EQOA Parser window](docs/images/screenshot.png)
+<p>
+<img src="docs/images/web-compact.png" alt="Compact meter" width="340">
+<img src="docs/images/web-detail.png" alt="Fight detail" width="420">
+</p>
 
 ## Download and run
 
@@ -19,14 +22,22 @@ The zip also has a `READ-ME-FIRST.txt` with the same steps, if you're passing it
 
 ## What you see
 
-The current fight lists each character as three rows: the character, their pet, and the two combined, with total
-damage, DPS and biggest hit. With two emulators running there's also an "All characters" line.
+The meter opens as a small window that stays on top of the game. The big number is your combined DPS, and the switch
+above it changes the view to **HPS** (healing) or **DTPS** (damage taken per second). Below it, every character gets a
+bar, with their pet's bar underneath. Drag the window by its header; **[^]** pins it on top, **[+]** opens the full view.
 
-Below that is a list of past fights showing the target, how long it lasted, and each character's damage. Click a fight
-to see its full breakdown and top hits. The run summary at the top gives each character's total, DPS and best fight.
+The full view has four tabs:
+- **Fights:** every fight with its target, length and each character's DPS (pet included).
+- **Detail:** the selected fight per character and pet: damage, DPS, biggest hit, damage taken (with DTPS and who hit
+  you) and healing done (with HPS) and received (with who healed you).
+- **Tests:** timed tests and their results (see below).
+- **Run:** totals for this session per character, plus kills, XP, class mastery XP and tunar, each also per hour.
 
-Fights are saved to `runs/<date>.json` next to the program and load back in if you restart it the same day. The window
-stays on top of other windows by default. There's also a console mode (`--no-gui`). The window is an HTML/CSS page shown with [pywebview](https://pywebview.flowrl.com/) (needs the WebView2 runtime that ships with Windows 11; fonts are bundled, no internet needed). If that isn't available it falls back to the older Tk window, which you can also ask for with `--classic`. The window position is remembered in `ui-state.json` next to `runs/`.
+Light and dark themes follow Windows, with a toggle. Fights are saved to `runs/<date>.json` next to the program and
+load back in if you restart it the same day. There's also a console mode (`--no-gui`), and the older plain window is
+still there as `--classic`.
+
+![Fight list](docs/images/web-fights.png)
 
 Start the meter before you log in or zone if you can. Names for characters and monsters come from data the server sends
 when they first appear, so anything already on screen when the meter starts shows up as an ID like `0x01312F0A` until it
@@ -62,19 +73,22 @@ From a terminal, `--no-gui --test 180 --test-label "Djinni Vizier 1"` runs one t
 The meter follows every copy of PCSX2 talking to the server and gives each character their own rows. If you only want
 one, pass its connection port (shown in the status line): `EQOAParser.exe --connection 20605`.
 
-## Optional: group and names (PINE)
+## Optional: names straight away (PINE)
 
-By default the meter only sees your own characters. With PINE on it also reads the group list and character names from
-the emulator's memory (read-only), so groupmates' damage shows up as extra characters with their own rows, and names
-are known straight away.
+With PINE on, the meter reads names from the emulator's memory (read-only), so your characters, your pet and the
+monsters around you are named from the start instead of after your first zone. Fights and tests also show your pet's
+name, like "Maige's pet (Djinni Vizier)".
+
+Groupmates' damage can't be shown, with or without PINE: the server only sends your PC the hits that involve your own
+character or pet. Heals a groupmate casts on you do show up, by name.
 
 1. In PCSX2, open Settings → Advanced, turn on PINE, and note the slot number (28011 by default).
 2. Run `EQOAParser.exe --pine` (add `--pine-slot 28012` if your slot isn't the default), or put this in `config.yaml`:
    `pine: {enabled: true, slot: 28012}`.
 
-The status line shows `PINE: on (slot 28012), group of 2`, or `PINE: not reachable` if PCSX2 isn't answering; the meter
-keeps working either way and retries every few seconds. PCSX2 copies share one settings file, so only one emulator can
-have PINE on at a time. Groupmates on other PCs only show up if that emulator is the one with PINE on.
+The status line shows `PINE: on (slot 28012)`, or `PINE: not reachable` if PCSX2 isn't answering; the meter keeps
+working either way and retries every few seconds. PCSX2 copies share one settings file, so only one emulator can have
+PINE on at a time.
 
 ## If it shows nothing
 
@@ -88,17 +102,21 @@ address. If Sandstorm ever moves to a new address, change `server_ip` in the sam
 This is an early version and it has only been tested on one PC. The packet format was pieced together from real game
 captures, so some of it is educated guesswork.
 
+- Only your own characters and pets are measured. The server never sends other players' damage.
+- Fighting several mobs at once counts as one fight, named after the mob that took the most damage. There's no per-mob
+  breakdown yet.
 - Without PINE, monsters that were already on screen when the meter started show as IDs instead of names.
-- Spell and ability names aren't decoded yet; they show as "(unknown)".
-- Group members on other people's PCs only show up with PINE on (see above).
+- Spell and ability names aren't decoded yet, and misses, resists and deaths aren't detected.
 
 Notes on how the packets were decoded, and which parts are confirmed, are in [docs/protocol-notes.md](docs/protocol-notes.md).
 
 ## Roadmap
 
-1. Names for monsters that were already on screen, without needing PINE.
-2. Spell and ability names.
-3. A transparent overlay you can click through.
+1. A per-mob breakdown for fights against several mobs.
+2. The DPS / HPS / DTPS switch in the full view too.
+3. PINE switching on by itself when PCSX2 has it enabled.
+4. Names for monsters that were already on screen, without needing PINE.
+5. Spell and ability names.
 
 ## Running from source
 
