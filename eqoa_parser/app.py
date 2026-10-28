@@ -519,3 +519,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         if recording is not None:
             recording.stop()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
