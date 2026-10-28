@@ -186,3 +186,87 @@ class LivePacketSource(PacketSource):
         cap = self._capture
         if cap is not None:
             cap.close()
+
+
+class ClientSocketSource:
+    """Yields Events from the EQOA Native Rust client's local UDP telemetry stream (127.0.0.1:28015).
+
+    Requires NO Administrator permissions, NO packet sniffing, and NO PINE.
+    """
+
+    def __init__(self, port: int = 28015, poll_interval: float = 0.5) -> None:
+        import socket
+        self.port = port
+        self.poll_interval = poll_interval
+        self._closed = threading.Event()
+        self.pine_note = "Native Client: active"
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except (AttributeError, OSError):
+            pass
+        sock.bind(("127.0.0.1", self.port))
+        sock.settimeout(self.poll_interval)
+        self._sock = sock
+
+    @property
+    def has_game_traffic(self) -> bool:
+        return True
+
+    def pine_status(self) -> str:
+        return self.pine_note
+
+    def own_actors(self) -> list[str]:
+        return ["you", "pet"]
+
+    def character_groups(self) -> list:
+        return []
+
+    def __iter__(self) -> Iterator[tuple[float, Event | str]]:
+        import json
+        sock = self._sock
+        if sock is None:
+            return
+        last_heartbeat = time.time()
+        try:
+            while not self._closed.is_set():
+                try:
+                    data, _ = sock.recvfrom(4096)
+                except TimeoutError:
+                    now = time.time()
+                    yield now, HEARTBEAT
+                    continue
+                except OSError:
+                    break
+
+                now = time.time()
+                try:
+                    obj = json.loads(data.decode("utf-8"))
+                    ev = Event(
+                        ts=float(obj.get("ts", now)),
+                        actor=str(obj.get("actor", "you")),
+                        target=obj.get("target"),
+                        amount=int(obj.get("amount", 0)),
+                        ability=obj.get("ability", "melee"),
+                        kind=str(obj.get("kind", "damage")),
+                        raw=data.decode("utf-8", errors="replace"),
+                    )
+                    yield ev.ts, ev
+                except Exception:
+                    pass
+
+                if now - last_heartbeat >= self.poll_interval:
+                    last_heartbeat = now
+                    yield now, HEARTBEAT
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        self._closed.set()
+        sock = self._sock
+        self._sock = None
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass

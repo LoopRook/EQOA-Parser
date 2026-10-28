@@ -51,6 +51,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--config", metavar="PATH", help="config YAML (default: config.yaml in the project root)")
     src = p.add_argument_group("source (exactly one)")
+    src.add_argument("--client", action="store_true", help="connect to EQOA Native Rust client live telemetry (no Administrator needed)")
     src.add_argument("--pcap", metavar="FILE", help="replay a packet capture (.pcapng) of the game traffic")
     src.add_argument("--live", action="store_true",
                      help="capture the game's UDP packets live (needs Administrator; see docs/live-capture.md)")
@@ -89,9 +90,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse and validate; invalid combinations exit with status 2 via parser.error()."""
     parser = build_arg_parser()
     args = parser.parse_args(argv)
-    chosen = [bool(args.replay), bool(args.pcap), bool(args.live), bool(args.live_pine)]
+    chosen = [bool(args.replay), bool(args.pcap), bool(args.live), bool(args.live_pine), bool(args.client)]
     if sum(chosen) != 1:
-        parser.error("exactly one of --pcap FILE, --live, --replay FILE or --live-pine is required")
+        parser.error("exactly one of --client, --pcap FILE, --live, --replay FILE or --live-pine is required")
     if args.speed is not None:
         if args.speed < 0:
             parser.error("--speed must be >= 0")
@@ -158,6 +159,9 @@ def make_source(args: argparse.Namespace, cfg: Config):
         if cfg.pine.enabled:
             source.pine_note = "PINE: off in replay"
         return source, f"pcap:{args.pcap}"
+    if args.client:
+        from .net.sources import ClientSocketSource
+        return ClientSocketSource(), "live:native-client"
     if args.live:
         from .net.capture import CaptureError, RawCapture
         from .net.sources import LivePacketSource
